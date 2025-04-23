@@ -4,6 +4,12 @@ Implementation of a qudratic local formulation to interactively calculate melt r
 
 Calculations are made per glacial drainage basin to avoid computation of nearest neighbours when the ice shelf grounding line evolves.
 
+The code has been modified in 4 files:
+* isf\_oce.F90
+* isfpar.F90
+* isfparmlt.F90
+* isfstp.F90
+
 The required inputs are zmin,zmax (as previously for prescribed melt and Beckman & Goose 2003), and **isfpar\_basin** the map of basin numbers, and **isfpar\_area** the non-resolved ice shelf area (m^2) per basin and per vertical level.
 
 There are new inputs in the ocean namelist:
