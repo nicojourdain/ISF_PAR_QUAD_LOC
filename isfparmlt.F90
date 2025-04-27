@@ -253,14 +253,16 @@ CONTAINS
           DO jk = 1,jpk
             !
             ! Melt per basin per vertical level [kg s^-1] :
-            ! NB1: rn_isfpar_Kcoeff is defined in eq. 16 of Brugard et al. (2022)
+            ! NB1: rn_isfpar_Kcoeff is defined in eq. 16 of Burgard et al. (2022)
             !      and was calibrated at 1.16e-4 in that paper (here specified by user).
             ! NB2: vertical extrapolation of levels with area_exchg=0 is done here using jk_exchg.
             zmelt(kbasin,jk) = rn_isfpar_Kcoeff * zcoef * zzztf2s(kbasin,jk_exchg(kbasin,jk)) * risf_par_area(kbasin,jk)
             !
             ! 2D net fresh water flux due to ice shelf melting ( > 0 from isf to oce) [kg m^-2 s^-1]
             ! (will be redistributed between zmin and zmax by subroutines isf_hdiv_mlt and tra_isf_mlt)
-            pqfwf(:,:) = pqfwf(:,:) + zmelt(kbasin,jk) * mskisf_exchg(:,:,kbasin) * tmask(:,:,jk) / area_exchg(kbasin,jk)
+            ! NB: here, jk_exchg is used to put the meltwater in ocean cells of the exchange zone.
+            pqfwf(:,:) = pqfwf(:,:) + zmelt(kbasin,jk) * mskisf_exchg(:,:,kbasin) &
+            &                         * tmask(:,:,jk_exchg(kbasin,jk)) / area_effec(kbasin,jk_exchg(kbasin,jk))
             !
           END DO
         ELSE

@@ -200,9 +200,11 @@ CONTAINS
          !
          ! Find interfacial water columns in individual basins, save corresponding mask and area:
          !    mskisf_exchg(ji,jj,kbasin) is a horizontal 2d mask defining the exchange zone for individual basins.
-         !    area_exchg(kbasin,jk) calculates once for all the total exchange area at every level in individual basins. 
+         !    area_exchg(kbasin,jk) is the total exchange area at every level in individual basins (used to calculate mean T,S profiles)
+         !    area_effec(kbasin,jk) is the effective exchange area at every level in individual basins
          ln_exchg(:) = .true.
          jk_exchg(:,:) = 0
+         area_effec(:,:) = 0.0_wp
          DO kbasin=1,nn_isfpar_basin
            !
            DO_2D( nn_hls, nn_hls, nn_hls, nn_hls ) 
@@ -244,6 +246,11 @@ CONTAINS
                endif
              ENDDO
              jk_exchg(kbasin,:) = zzj_exchg(:)
+             ! Calculate area_effec(kbasin,jk) the effective exchange area at every level in individual basins
+             ! (used to re-inject freshwater accounting for the use of jk_exchg)
+             DO jk = 1,jpk
+               area_effec(kbasin,jk_exchg(kbasin,jk)) = area_effec(kbasin,jk_exchg(kbasin,jk)) + area_exchg(kbasin,jk_exchg(kbasin,jk))
+             ENDDO
            ENDIF
            !
          ENDDO ! kbasin

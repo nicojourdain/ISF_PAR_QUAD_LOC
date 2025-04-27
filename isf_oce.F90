@@ -103,7 +103,7 @@ MODULE isf_oce
    REAL(wp) , PUBLIC, ALLOCATABLE, SAVE, DIMENSION(:,:)   :: fwfisf_par   , fwfisf_par_b   !: before and now net fwf from the ice shelf        [kg/m2/s]
    REAL(wp) , PUBLIC, ALLOCATABLE, SAVE, DIMENSION(:,:)   :: risf_par_area                 !: non-resolved ice-shelf area per basin and per z level [m2]
    REAL(wp) , PUBLIC, ALLOCATABLE, SAVE, DIMENSION(:,:,:) :: risf_par_tsc , risf_par_tsc_b !: before and now T & S isf contents [K.m/s & PSU.m/s]  
-   REAL(wp) , PUBLIC, ALLOCATABLE, SAVE, DIMENSION(:,:)   :: area_exchg                    !: Total exchange area per vertical level for the interactive param [m2]
+   REAL(wp) , PUBLIC, ALLOCATABLE, SAVE, DIMENSION(:,:)   :: area_exchg, area_effec        !: Total exchange area per vertical level for the interactive param [m2]
    TYPE(FLD), PUBLIC, ALLOCATABLE, SAVE, DIMENSION(:)     :: sf_isfpar_fwf                 !:
    LOGICAL,   PUBLIC, ALLOCATABLE, SAVE, DIMENSION(:)     :: ln_exchg                      !: indicates whether a given basin is active or not (i.e. zero total exchange area) 
    !
@@ -144,6 +144,9 @@ CONTAINS
       ierr = ierr + ialloc
       !
       ALLOCATE(area_exchg(nn_isfpar_basin,jpk), STAT=ialloc)
+      ierr = ierr + ialloc
+      !
+      ALLOCATE(area_effec(nn_isfpar_basin,jpk), STAT=ialloc)
       ierr = ierr + ialloc
       !
       ALLOCATE(ln_exchg(nn_isfpar_basin), STAT=ialloc)
