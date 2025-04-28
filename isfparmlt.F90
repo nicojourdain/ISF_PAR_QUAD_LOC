@@ -215,7 +215,8 @@ CONTAINS
       !!--------------------------------------------------------------------
       REAL(wp), DIMENSION(jpi,jpj)     :: ztfrz         ! mean freezing temperature in interfacial water columns [degC]
       REAL(wp), DIMENSION(jpi,jpj,jpk) :: ztf3d         ! 3d thermal forcing [degC]
-      REAL(wp), DIMENSION(jpi,jpj,jpk) :: ztftfs3d      ! TF*|TF|*Sloc*e1t*e2t (where TF = thermal forcing)
+      !REAL(wp), DIMENSION(jpi,jpj,jpk) :: ztftfs3d      ! TF*|TF|*Sloc*e1t*e2t (where TF = thermal forcing)
+      REAL(wp), DIMENSION(jpk)         :: ztftfs        ! TF*|TF|*Sloc*e1t*e2t (where TF = thermal forcing)
       REAL(wp), DIMENSION(nn_isfpar_basin,jpk) :: zmelt ! Parameterised melt per basin and per level [kg s^-1]
       REAL(wp), DIMENSION(nn_isfpar_basin,jpk) :: zzztf2s ! TF*|TF|*Sloc for interfacial cells  [degC^2 1.e-3]
       INTEGER  :: ji, jj, jk, kbasin         ! dummy loop indices
@@ -243,12 +244,18 @@ CONTAINS
           !
           ! Calculate ztftfs3d as TF*|TF|*Sloc*e1t*e2t (where TF = thermal forcing) [degC^2 1.e-3 m^2]:
           DO jk = 1,jpk
-            ztftfs3d(:,:,jk) = ( ts(:,:,jk,jp_tem,Kmm) - ztf3d(:,:,jk) ) * abs( ts(:,:,jk,jp_tem,Kmm) - ztf3d(:,:,jk) ) &
-            &                  * ts(:,:,jk,jp_sal,Kmm) * e1e2t(:,:) * mskisf_exchg(:,:,kbasin) * tmask(:,:,jk)
-          END DO
-          ! Average profile of TF*|TF|*Sloc in the interfacial ocean grid cells [degC^2 1.e-3]
-          ! (no problem if area_exchg=0 at some levels, these values will be replaced in the next loop)
-          zzztf2s(kbasin,:) = glob_sum( 'isfparmlt', ztftfs3d(:,:,:) ) / area_exchg(kbasin,:)
+            ztftfs(jk) = SUM( ( ts(:,:,jk,jp_tem,Kmm) - ztf3d(:,:,jk) ) * abs( ts(:,:,jk,jp_tem,Kmm) - ztf3d(:,:,jk) ) &
+            &                  * ts(:,:,jk,jp_sal,Kmm) * e1e2t(:,:) * mskisf_exchg(:,:,kbasin) * tmask(:,:,jk) ) 
+          ENDDO
+          CALL mpp_sum( 'isf_par_mlt_quad_loc', ztftfs(:) )
+          zzztf2s(kbasin,:) = ztftfs(:) / area_exchg(kbasin,:)
+          !DO jk = 1,jpk
+          !  ztftfs3d(:,:,jk) = ( ts(:,:,jk,jp_tem,Kmm) - ztf3d(:,:,jk) ) * abs( ts(:,:,jk,jp_tem,Kmm) - ztf3d(:,:,jk) ) &
+          !  &                  * ts(:,:,jk,jp_sal,Kmm) * e1e2t(:,:) * mskisf_exchg(:,:,kbasin) * tmask(:,:,jk)
+          !END DO
+          !! Average profile of TF*|TF|*Sloc in the interfacial ocean grid cells [degC^2 1.e-3]
+          !! (no problem if area_exchg=0 at some levels, these values will be replaced in the next loop)
+          !zzztf2s(kbasin,:) = glob_sum( 'isfparmlt', ztftfs3d(:,:,:) ) / area_exchg(kbasin,:)
           !
           DO jk = 1,jpk
             !

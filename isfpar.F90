@@ -118,7 +118,8 @@ CONTAINS
       REAL(wp)                         :: epsln = 1.e-20_wp  
       INTEGER, DIMENSION(jpk)          :: zzj_exchg
       REAL(wp), DIMENSION(jpi,jpj)     :: ztblmax, ztblmin, zzid
-      REAL(wp), DIMENSION(jpi,jpj,jpk) :: zztmp3d
+      !REAL(wp), DIMENSION(jpi,jpj,jpk) :: zztmp3d
+      REAL(wp), DIMENSION(jpk)         :: ztmp
       !!------------------------------------------------------------------------------
       !
       ! allocation
@@ -217,9 +218,14 @@ CONTAINS
            !
            ! Area of the exchange zone per basin and per vertical level [m^2]
            DO jk = 1,jpk
-             zztmp3d(:,:,jk) = e1e2t(:,:) * tmask(:,:,jk) * mskisf_exchg(:,:,kbasin)
-           ENDDO
-           area_exchg(kbasin,:) = glob_sum( 'isf_par_init', zztmp3d(:,:,:) )
+               ztmp(jk) = SUM( e1e2t(:,:) * tmask(:,:,jk) * mskisf_exchg(:,:,kbasin) )
+           END DO
+           CALL mpp_sum( 'isf_par_init', ztmp(:) )
+           area_exchg(kbasin,:) = ztmp(:)
+           !DO jk = 1,jpk
+           !  zztmp3d(:,:,jk) = e1e2t(:,:) * tmask(:,:,jk) * mskisf_exchg(:,:,kbasin)
+           !ENDDO
+           !area_exchg(kbasin,:) = glob_sum( 'isf_par_init', zztmp3d(:,:,:) )
            !
            IF ( SUM(area_exchg(kbasin,:)) .lt. epsln ) THEN
              ! identify inactive basins to skip useless calculations:
