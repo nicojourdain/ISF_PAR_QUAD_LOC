@@ -20,7 +20,7 @@ MODULE isfparmlt
    USE in_out_manager              ! I/O manager
    USE iom        , ONLY: iom_put  ! I/O library
    USE fldread    , ONLY: fld_read, FLD, FLD_N !
-   USE lib_fortran, ONLY: local_sum, glob_sum
+   USE lib_fortran, ONLY: glob_sum
    USE lib_mpp    , ONLY: mpp_sum, ctl_stop !
 
    IMPLICIT NONE
@@ -214,14 +214,13 @@ CONTAINS
       REAL(wp) ::   zsin_theta = 2.9e-3   ! assuming a representative "Antarctic slope" [1]
       REAL(wp) ::   zeps       = 1.0e-20
       !!--------------------------------------------------------------------
-      COMPLEX(dp), DIMENSION(nbasins_glo*jpk) :: ctmp  ! 1d version of ztf2s for the mppsum
-      COMPLEX(dp), DIMENSION(nbasins_glo,jpk) :: ctf2s ! TF*|TF|*Sloc for interfacial cells  [degC^2 1.e-3]
-      REAL(wp), DIMENSION(jpi,jpj)         :: ztfrz ! mean freezing temperature in interfacial water columns [degC]
-      REAL(wp), DIMENSION(jpi,jpj,jpk)     :: ztf3d ! 3d thermal forcing [degC]
+      REAL(wp), DIMENSION(jpk)         :: ztmp          ! tmp sum of 2d slice of TF*|TF|*Sloc*e1t*e2t (where TF = thermal forcing)
+      REAL(wp), DIMENSION(jpi,jpj)     :: ztfrz         ! mean freezing temperature in interfacial water columns [degC]
+      REAL(wp), DIMENSION(jpi,jpj,jpk) :: ztf3d         ! 3d thermal forcing [degC]
       REAL(wp), DIMENSION(nbasins_glo,jpk) :: zmelt ! Parameterised melt per basin and per level [kg s^-1]
       REAL(wp), DIMENSION(nbasins_glo,jpk) :: ztf2s ! TF*|TF|*Sloc for interfacial cells  [degC^2 1.e-3]
       INTEGER  :: ji, jj, jk, jb_loc, jb_glo ! dummy loop indices
-      REAL(wp) :: zcoef,toto                 ! Constant coefficient used in the param [kg m^-2 s^-1 degC^-2 1.e3]
+      REAL(wp) :: zcoef                      ! Constant coefficient used in the param [kg m^-2 s^-1 degC^-2 1.e3]
       !!----------------------------------------------------------------------
       !
       ! 0: constant definition
@@ -251,41 +250,26 @@ CONTAINS
       ! 
       DO jb_glo=1,nbasins_glo
          !
+         jb_loc=idx_basin_glo_to_loc(jb_glo)
+
          IF ( ln_exchg(jb_glo) ) THEN
-            !
-            jb_loc=idx_basin_glo_to_loc(jb_glo)
             !
             ! 2.1: Thermal forcing computation
             ! --------------------------------
             !
             ! Calculate ztftfs3d as TF*|TF|*Sloc*e1t*e2t (where TF = thermal forcing) [degC^2 1.e-3 m^2]:
-            !     * tmask_i to avoid double count of halo cells (case basin over multiple sub domains)
+            ztmp(:)=0._wp
             DO jk = 1,jpk
-!               DO_2D( 0, 0, 0, 0 ) 
-!                  ztf2s(jb_glo,jk) = ztf2s(jb_glo,jk) + ( ts(ji,jj,jk,jp_tem,Kmm) - ztf3d(ji,jj,jk) ) * ABS( ts(ji,jj,jk,jp_tem,Kmm) - ztf3d(ji,jj,jk) ) &
-!                  &                     * ts(ji,jj,jk,jp_sal,Kmm) * e1e2t(ji,jj) * mskisf_exchg(ji,jj,jb_loc) * tmask(ji,jj,jk) * tmask_i(ji,jj)
-!               END_2D
-               ctf2s(jb_glo,jk)= local_sum( ( ts(:,:,jk,jp_tem,Kmm) - ztf3d(:,:,jk) ) * ABS( ts(:,:,jk,jp_tem,Kmm) - ztf3d(:,:,jk) ) &
-                        &                   * ts(:,:,jk,jp_sal,Kmm) * e1e2t(:,:) * mskisf_exchg(:,:,jb_loc) * tmask(:,:,jk) / MAX(area_exchg(jb_loc,jk),zeps) )
+               DO_2D( 0, 0, 0, 0 ) 
+                  ztmp(jk) = ztmp(jk) + ( ts(ji,jj,jk,jp_tem,Kmm) - ztf3d(ji,jj,jk) ) * abs( ts(ji,jj,jk,jp_tem,Kmm) - ztf3d(ji,jj,jk) ) &
+                  &                     * ts(ji,jj,jk,jp_sal,Kmm) * e1e2t(ji,jj) * mskisf_exchg(ji,jj,jb_loc) * tmask(ji,jj,jk)
+               END_2D
             END DO
-         ELSE
-            ctf2s(jb_glo,:) = CMPLX( 0.e0, 0.e0, dp )
-         END IF
-      END DO
-      !
-      ! Average profile of TF*|TF|*Sloc in the interfacial ocean grid cells [degC^2 1.e-3]
-      ! because mpp_sum is only 0d or 1d, we need to reshape
-      ctmp(:) = RESHAPE(ctf2s, [nbasins_glo * jpk] )
-      CALL mpp_sum( 'isfparmlt', ctmp(:) )
-      ztf2s(:,:) = REAL(RESHAPE(ctmp(:), [nbasins_glo, jpk]),wp)
-      !
-      pqfwf(:,:)      = 0._wp
-      DO jb_glo=1,nbasins_glo
-!DEBUG         IF ( (lwp) .AND. (jb_glo == 99) .AND. (kt==1) ) PRINT *,'ztf2s :',ztf2s(jb_glo,:)
-         !
-         IF ( ln_exchg(jb_glo) ) THEN
-            !
-            jb_loc=idx_basin_glo_to_loc(jb_glo)
+            ! Average profile of TF*|TF|*Sloc in the interfacial ocean grid cells [degC^2 1.e-3]
+      ! TEST PERF      CALL mpp_sum( 'isfparmlt', ztmp(:) )
+            DO jk=1,jpk
+               ztf2s(jb_glo,jk) = ztmp(jk) / MAX(area_exchg(jb_loc,jk),zeps)
+            END DO
             !
             ! 2.2: Melt computation
             ! --------------------------------
@@ -294,28 +278,28 @@ CONTAINS
                !
                ! Melt per basin per vertical level [kg s^-1] :
                ! NB2: vertical extrapolation of levels with area_exchg=0 is done here using jk_exchg.
-               zmelt(jb_glo,jk) = zcoef * ztf2s(jb_glo,jk_exchg(jb_loc,jk)) * risf_par_area_loc(jb_loc,jk)
+               zmelt(jb_glo,jk) = zcoef * ztf2s(jb_glo,jk_exchg(jb_loc,jk)) * risf_par_area(jb_glo,jk)
                !
                ! 2D net fresh water flux due to ice shelf melting ( > 0 from isf to oce) [kg m^-2 s^-1]
                ! (will be redistributed between zmin and zmax by subroutines isf_hdiv_mlt and tra_isf_mlt)
                ! if area_exchg = 0, zmelt is 0.
-               pqfwf(:,:) = pqfwf(:,:) + zmelt(jb_glo,jk) * mskisf_exchg(:,:,jb_loc) * tmask(:,:,jk_exchg(jb_loc,jk)) / MAX(area_exchg(jb_loc,jk_exchg(jb_loc,jk)),zeps)
+               pqfwf(:,:) = pqfwf(:,:) + zmelt(jb_glo,jk) * mskisf_exchg(:,:,jb_loc) * tmask(:,:,jk) / MAX(area_exchg(jb_loc,jk),zeps) * 0.0_wp ! TEST PERF
                !
             END DO
-            IF (lwp) PRINT *, jb_glo, SUM(area_exchg(jb_loc,:)), SUM(risf_par_area_loc(jb_loc,:)), SUM(zmelt(jb_glo,:))
          ELSE
             !
+            ! basin not in this subdomain, send 0 to the mpp_sum
+            ztmp(:) = 0._wp
+      ! TEST PERF      CALL mpp_sum( 'isfparmlt', ztmp(:) )
+            !
             ! basin not in this domain, set to missing value
+            ztf2s(jb_glo,:) = 0._wp
             zmelt(jb_glo,:) = 0._wp
+            pqfwf(:,:)      = 0._wp
             !
          ENDIF
          !
       ENDDO
-
-      IF (lwp) PRINT *, kt
-      IF (lwp) PRINT *, SUM(ztf2s)
-      toto=glob_sum('debug',pqfwf)
-      IF (lwp) PRINT *, toto
       !
       ! 3: Diagnostics
       ! output per basin and per vertical level (to possibly redistribute per depth to finer-scale ice shelf draft):

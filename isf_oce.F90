@@ -23,7 +23,7 @@ MODULE isf_oce
 
    PRIVATE
 
-   PUBLIC   isf_alloc, isf_alloc_par, isf_alloc_cav, isf_alloc_cpl, isf_dealloc_cpl
+   PUBLIC   isf_alloc, isf_alloc_par, isf_alloc_par_quad, isf_alloc_cav, isf_alloc_cpl, isf_dealloc_cpl
    !
    !-------------------------------------------------------
    ! 0 :              namelist parameter
@@ -94,21 +94,26 @@ MODULE isf_oce
    REAL(wp) , PUBLIC                                      :: risf_lamb1, risf_lamb2, risf_lamb3  ! freezing point linearization coeficient
    !
    ! 2.3 -------- ice shelf param. melt namelist parameter -------------
-   INTEGER  , PUBLIC, ALLOCATABLE, SAVE, DIMENSION(:,:,:) :: mskisf_exchg                  !: Exchanging water columns for the interactive param (sends thermal forcing and receives melt)
    INTEGER  , PUBLIC, ALLOCATABLE, SAVE, DIMENSION(:,:)   :: mskisf_par                    !: 
    INTEGER  , PUBLIC, ALLOCATABLE, SAVE, DIMENSION(:,:)   :: misfkt_par   , misfkb_par     !:
-   INTEGER  , PUBLIC, ALLOCATABLE, SAVE, DIMENSION(:,:)   :: id_basin_isfpar               !: ID of the basin used for the melt parameterisations
-   INTEGER  , PUBLIC, ALLOCATABLE, SAVE, DIMENSION(:,:)   :: jk_exchg                      !: Index of vertical level for extrapolation of exchange T,S profiles
    REAL(wp) , PUBLIC, ALLOCATABLE, SAVE, DIMENSION(:,:)   :: rhisf_tbl_par, rfrac_tbl_par  !: 
    REAL(wp) , PUBLIC, ALLOCATABLE, SAVE, DIMENSION(:,:)   :: fwfisf_par   , fwfisf_par_b   !: before and now net fwf from the ice shelf        [kg/m2/s]
-   REAL(wp) , PUBLIC, ALLOCATABLE, SAVE, DIMENSION(:,:)   :: risf_par_area                 !: non-resolved ice-shelf area per basin and per z level [m2]
    REAL(wp) , PUBLIC, ALLOCATABLE, SAVE, DIMENSION(:,:,:) :: risf_par_tsc , risf_par_tsc_b !: before and now T & S isf contents [K.m/s & PSU.m/s]  
-   REAL(wp) , PUBLIC, ALLOCATABLE, SAVE, DIMENSION(:,:)   :: area_exchg, area_effec        !: Total exchange area per vertical level for the interactive param [m2]
    TYPE(FLD), PUBLIC, ALLOCATABLE, SAVE, DIMENSION(:)     :: sf_isfpar_fwf                 !:
-   LOGICAL,   PUBLIC, ALLOCATABLE, SAVE, DIMENSION(:)     :: ln_exchg                      !: indicates whether a given basin is active or not (i.e. zero total exchange area) 
    !
    REAL(wp) , PUBLIC, ALLOCATABLE, SAVE, DIMENSION(:,:)   :: rhisf0_tbl_par                !: thickness of tbl (initial value)  [m]
    REAL(wp) , PUBLIC, ALLOCATABLE, SAVE, DIMENSION(:,:)   :: risfLeff                      !:
+   !
+   ! QUAD PAR
+   INTEGER  , PUBLIC                                      :: nbasins_loc, nbasins_glo
+   INTEGER  , PUBLIC, ALLOCATABLE, SAVE, DIMENSION(:,:,:) :: mskisf_exchg                  !: Exchanging water columns for the interactive param (sends thermal forcing and receives melt)
+   INTEGER  , PUBLIC, ALLOCATABLE, SAVE, DIMENSION(:,:)   :: id_basin_isfpar               !: ID of the basin used for the melt parameterisations
+   INTEGER  , PUBLIC, ALLOCATABLE, SAVE, DIMENSION(:,:)   :: jk_exchg                      !: Index of vertical level for extrapolation of exchange T,S profiles
+   REAL(wp) , PUBLIC, ALLOCATABLE, SAVE, DIMENSION(:,:)   :: risf_par_area_loc             !: non-resolved ice-shelf area per basin and per z level [m2]
+   REAL(wp) , PUBLIC, ALLOCATABLE, SAVE, DIMENSION(:,:)   :: area_exchg                    !: Total exchange area per vertical level for the interactive param [m2]
+   LOGICAL,   PUBLIC, ALLOCATABLE, SAVE, DIMENSION(:)     :: ln_exchg                      !: indicates whether a given basin is active or not (i.e. zero total exchange area) 
+   INTEGER  , PUBLIC, ALLOCATABLE, SAVE, DIMENSION(:)     :: idx_basin_glo_to_loc          !: mapping between the global and local basin index
+   INTEGER  , PUBLIC, ALLOCATABLE, SAVE, DIMENSION(:)     :: idx_basin_loc_to_glo          !: mapping between the global and local basin index
    !
    ! 2.4 -------- coupling namelist parameter -------------
    INTEGER , PUBLIC                                        ::   nstp_iscpl   !:
@@ -123,6 +128,47 @@ MODULE isf_oce
    !! Software governed by the CeCILL license (see ./LICENSE)
    !!----------------------------------------------------------------------
 CONTAINS
+   SUBROUTINE isf_alloc_par_quad(cloc)
+      !!---------------------------------------------------------------------
+      !!                  ***  ROUTINE isf_alloc_par  ***
+      !!
+      !! ** Purpose : allocate variable needed for the quadratic 
+      !!              parametrisation of isf melt
+      !!
+      !! ** Method  :
+      !!
+      !!----------------------------------------------------------------------
+      CHARACTER(3), INTENT(in) :: cloc
+      INTEGER :: ierr, ialloc
+      !!----------------------------------------------------------------------
+      ierr = 0
+      IF (TRIM(cloc) == 'glo') THEN
+         !
+         PRINT*, nbasins_glo
+         ALLOCATE(id_basin_isfpar(jpi,jpj), STAT=ialloc)
+         ierr = ierr + ialloc
+         ALLOCATE(idx_basin_glo_to_loc(nbasins_glo), STAT=ialloc)
+         ierr = ierr + ialloc
+         ALLOCATE(ln_exchg(nbasins_glo), STAT=ialloc)
+         ierr = ierr + ialloc
+      ELSE IF (TRIM(cloc) == 'loc') THEN 
+         !
+         ALLOCATE(idx_basin_loc_to_glo(nbasins_loc), STAT=ialloc)
+         ierr = ierr + ialloc
+         ALLOCATE(mskisf_exchg(jpi,jpj,nbasins_loc), STAT=ialloc)
+         ierr = ierr + ialloc
+         ALLOCATE(jk_exchg(nbasins_loc,jpk),area_exchg(nbasins_loc,jpk), STAT=ialloc)
+         ierr = ierr + ialloc
+         ALLOCATE(risf_par_area_loc(nbasins_loc,jpk), STAT=ialloc)
+         ierr = ierr + ialloc
+         PRINT*, 'loc',nbasins_loc,ierr
+      ELSE
+         CALL ctl_stop( 'STOP', 'unknown cloc')
+      END IF
+
+      CALL mpp_sum ( 'isf', ierr )
+      IF( ierr /= 0 )   CALL ctl_stop( 'STOP', 'isf: failed to allocate arrays (par quad).' )
+   END SUBROUTINE isf_alloc_par_quad
 
    SUBROUTINE isf_alloc_par()
       !!---------------------------------------------------------------------
@@ -137,24 +183,6 @@ CONTAINS
       !!----------------------------------------------------------------------
       ierr = 0       ! set to zero if no array to be allocated
       !
-      ALLOCATE(risf_par_area(nn_isfpar_basin,jpk), STAT=ialloc)
-      ierr = ierr + ialloc
-      !
-      ALLOCATE(jk_exchg(nn_isfpar_basin,jpk), STAT=ialloc)
-      ierr = ierr + ialloc
-      !
-      ALLOCATE(area_exchg(nn_isfpar_basin,jpk), STAT=ialloc)
-      ierr = ierr + ialloc
-      !
-      ALLOCATE(area_effec(nn_isfpar_basin,jpk), STAT=ialloc)
-      ierr = ierr + ialloc
-      !
-      ALLOCATE(ln_exchg(nn_isfpar_basin), STAT=ialloc)
-      ierr = ierr + ialloc
-      !
-      ALLOCATE(id_basin_isfpar(jpi,jpj), STAT=ialloc)
-      ierr = ierr + ialloc
-      !
       ALLOCATE(risfLeff(jpi,jpj), STAT=ialloc)
       ierr = ierr + ialloc
       !
@@ -168,9 +196,6 @@ CONTAINS
       ierr = ierr + ialloc
       !
       ALLOCATE( mskisf_par(jpi,jpj), STAT=ialloc)
-      ierr = ierr + ialloc
-      !
-      ALLOCATE( mskisf_exchg(jpi,jpj,nn_isfpar_basin), STAT=ialloc)
       ierr = ierr + ialloc
       !
       CALL mpp_sum ( 'isf', ierr )

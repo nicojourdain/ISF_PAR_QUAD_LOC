@@ -30,6 +30,8 @@ MODULE isfpar
    USE in_out_manager ! I/O manager
    USE iom            ! I/O library
    USE fldread        ! read input field at current time step
+   USE lib_fortran, ONLY: local_sum
+   USE lib_mpp    , ONLY: mpp_sum, ctl_stop !
 
    IMPLICIT NONE
    PRIVATE
@@ -114,12 +116,14 @@ CONTAINS
       !! ** Purpose : initialisation of the variable needed for the parametrisation of ice shelf melt
       !!
       !!------------------------------------------------------------------------------
-      INTEGER                          :: ierr, inum, kbasin, ji, jj, jk, krr, krs, indx
+      INTEGER                          :: ierr, inum, jb_loc, jb_glo, ji, jj, jk, indx
       REAL(wp)                         :: epsln = 1.e-20_wp  
-      INTEGER, DIMENSION(jpk)          :: zzj_exchg
-      REAL(wp), DIMENSION(jpi,jpj)     :: ztblmax, ztblmin, zzid
-      !REAL(wp), DIMENSION(jpi,jpj,jpk) :: zztmp3d
+      INTEGER                          :: kbest, kb_used, klen, ialloc
       REAL(wp), DIMENSION(jpk)         :: ztmp
+      COMPLEX(dp), DIMENSION(jpk)      :: ctmp
+      INTEGER , ALLOCATABLE, DIMENSION(:)   :: klvl
+      REAL(wp), ALLOCATABLE, DIMENSION(:,:) :: zisf_par_area_glo  ! area distribution per isf basin (from input file)
+      REAL(wp), DIMENSION(jpi,jpj)     :: ztblmax, ztblmin, zzid
       !!------------------------------------------------------------------------------
       !
       ! allocation
@@ -190,76 +194,133 @@ CONTAINS
          IF(lwp) WRITE(numout,*) '      ==>>>   Ice shelf melt rate calculated through'
          IF(lwp) WRITE(numout,*) '              the quadratic-local parametrisation (cn_isfmlt_par = quad_loc)'
          !
+         nbasins_glo = nn_isfpar_basin
+         !
+         CALL isf_alloc_par_quad('glo')
+         !
          ! read basin ID (2d map)
          CALL read_2dcstdta(TRIM(sn_isfpar_basin%clname), TRIM(sn_isfpar_basin%clvar), zzid)
-         id_basin_isfpar = INT(zzid)
+         id_basin_isfpar = NINT(zzid)
          !
          ! read non-resolved (i.e. parameterised) ice-shelf area [m2] per basin and per vertical level
+         ALLOCATE(zisf_par_area_glo(nbasins_glo,jpk), STAT=ialloc)
+         IF( ialloc > 0 ) THEN
+            CALL ctl_stop( 'isfpar: unable to allocate zisf_par_area_glo' )   ;   RETURN
+         ENDIF
+
          CALL iom_open( TRIM(sn_isfpar_area%clname), inum )
-         CALL iom_get( inum, jpdom_unknown, TRIM(sn_isfpar_area%clvar), risf_par_area )
+         CALL iom_get( inum, jpdom_unknown, TRIM(sn_isfpar_area%clvar), zisf_par_area_glo )
          CALL iom_close(inum) 
+
+         !---------------------------------------------------------
+         ! 2. Identify which basins are present in this subdomain
+         !    !!!! Basin id need to be between 1 and nbasins_glo => to be improve by reading the basin_id variable
+         idx_basin_glo_to_loc(:) = 0
+         kb_used = 0
+         DO jb_glo = 1, nbasins_glo
+            IF ( ANY( id_basin_isfpar(:,:) * tmask_i(:,:) == jb_glo) ) THEN
+               kb_used = kb_used + 1
+               idx_basin_glo_to_loc(jb_glo) = kb_used
+            ENDIF
+         END DO
+         nbasins_loc = kb_used
+
+         !---------------------------------------------------------
+         ! 3. Allocate array that have a local size
+         CALL isf_alloc_par_quad('loc')
+
+         ln_exchg(:) = .FALSE.
+         DO jb_glo = 1, nbasins_glo
+            jb_loc = idx_basin_glo_to_loc(jb_glo)
+            IF ( jb_loc  > 0 ) THEN
+               idx_basin_loc_to_glo( jb_loc ) = jb_glo
+               ln_exchg(jb_glo) = .TRUE.
+            ENDIF
+         END DO
          !
          ! Find interfacial water columns in individual basins, save corresponding mask and area:
          !    mskisf_exchg(ji,jj,kbasin) is a horizontal 2d mask defining the exchange zone for individual basins.
-         !    area_exchg(kbasin,jk) is the total exchange area at every level in individual basins (used to calculate mean T,S profiles)
-         !    area_effec(kbasin,jk) is the effective exchange area at every level in individual basins
-         ln_exchg(:) = .true.
-         jk_exchg(:,:) = 0
-         area_effec(:,:) = 0.0_wp
-         DO kbasin=1,nn_isfpar_basin
-           !
-           DO_2D( nn_hls, nn_hls, nn_hls, nn_hls ) 
-             if ( id_basin_isfpar(ji,jj) == kbasin ) then
-                mskisf_exchg(ji,jj,kbasin) = mskisf_par(ji,jj)
-             else
-                mskisf_exchg(ji,jj,kbasin) = 0
-             endif   
-           END_2D
-           !
-           ! Area of the exchange zone per basin and per vertical level [m^2]
-           DO jk = 1,jpk
-               ztmp(jk) = SUM( e1e2t(:,:) * tmask(:,:,jk) * mskisf_exchg(:,:,kbasin) )
-           END DO
-           CALL mpp_sum( 'isf_par_init', ztmp(:) )
-           area_exchg(kbasin,:) = ztmp(:)
-           !DO jk = 1,jpk
-           !  zztmp3d(:,:,jk) = e1e2t(:,:) * tmask(:,:,jk) * mskisf_exchg(:,:,kbasin)
-           !ENDDO
-           !area_exchg(kbasin,:) = glob_sum( 'isf_par_init', zztmp3d(:,:,:) )
-           !
-           IF ( SUM(area_exchg(kbasin,:)) .lt. epsln ) THEN
-             ! identify inactive basins to skip useless calculations:
-             ln_exchg(kbasin) = .false. 
-           ELSE
-             ! jk_exchg points to the closest level with non zero area_exchg
-             ! (used to kind of extrapolate T,S profiles to any potential ice draft depth)
-             DO jk = 1,jpk
-               if ( area_exchg(kbasin,jk) .ge. epsln )  jk_exchg(kbasin,jk) = jk
-             ENDDO
-             zzj_exchg(:) = jk_exchg(kbasin,:)
-             DO jk = 1,jpk
-               if ( jk_exchg(kbasin,jk) .eq. 0 ) then
-                 DO krr=1,jpk-1
-                   DO krs=-1,1,2
-                     indx=MAX(MIN(jk+krr*krs,jpk),1)
-                     if ( jk_exchg(kbasin,indx) .ne. 0 ) then
-                       zzj_exchg(jk) = jk_exchg(kbasin,indx)
-                       exit
-                     endif
-                   ENDDO
-                   if ( zzj_exchg(jk) .ne. 0 ) exit
-                 ENDDO
-               endif
-             ENDDO
-             jk_exchg(kbasin,:) = zzj_exchg(:)
-             ! Calculate area_effec(kbasin,jk) the effective exchange area at every level in individual basins
-             ! (used to re-inject freshwater accounting for the use of jk_exchg)
-             DO jk = 1,jpk
-               area_effec(kbasin,jk_exchg(kbasin,jk)) = area_effec(kbasin,jk_exchg(kbasin,jk)) + area_exchg(kbasin,jk_exchg(kbasin,jk))
-             ENDDO
-           ENDIF
-           !
-         ENDDO ! kbasin
+         !mskisf_exchg(:,:,:) = 0._wp
+         DO jb_loc = 1, nbasins_loc
+            jb_glo = idx_basin_loc_to_glo(jb_loc)
+            !
+            ! c=MERGE(a,b,l) is a F90 feature eq to IF ( l ) c=a ; ELSE c=b 
+            DO_2D( nn_hls, nn_hls, nn_hls, nn_hls )
+               mskisf_exchg(ji,jj,jb_loc) = MERGE(1.0_wp, 0.0_wp, id_basin_isfpar(ji,jj) == jb_glo)
+            END_2D
+            !
+         END DO
+         !
+         ! likely not needed as all the cell filled later.
+         !jk_exchg(:,:) = 0
+         DO jb_glo = 1, nbasins_glo
+            !
+            IF ( ln_exchg(jb_glo) ) THEN
+               !
+               jb_loc = idx_basin_glo_to_loc(jb_glo)
+               !
+!                     ctmp = CMPLX( 0.e0, 0.e0, dp )   ! warning ctmp is cumulated
+!      DO jk = 1, ipk
+!        DO jj = ijs, ije
+!          DO ji = iis, iie
+!             ztmp =  ARRAY_IN(ji,jj,jk) * MASK_ARRAY(ji,jj)
+!             CALL DDPDD( CMPLX( ztmp, 0.e0, dp ), ctmp )
+!          END DO
+!        END DO
+!      END DO
+!      CALL mpp_sum( cdname, ctmp )   ! sum over the global domain
+!      glob_sum_/**/XD = REAL(ctmp,wp)
+
+               ! Area of the exchange zone per basin and per vertical level [m^2]
+               DO jk = 1,jpk
+                  ctmp(jk) = local_sum( e1e2t(:,:) * tmask(:,:,jk) * mskisf_exchg(:,:,jb_loc) )
+               END DO
+               CALL mpp_sum( 'isf_par_init', ctmp(:) )
+               area_exchg(jb_loc,:) = REAL(ctmp(:),wp)
+               !
+               ! Compute all the valid wet level (jk_exchg) from area
+               DO jk = 1, jpk
+                  jk_exchg(jb_loc,jk) = MERGE(jk, 0, area_exchg(jb_loc,jk) >= epsln )
+               ENDDO
+               !
+               ! Extract ice shelf draft area for only the local basin
+               risf_par_area_loc(jb_loc,:) = zisf_par_area_glo(jb_glo,:)
+               !
+               ! Fill jk for depth below and above valid data at the front to compute melt in case draft of GL above or below the
+               ! valid wet level 
+               ! method: nearest neighbor forward/backward fill
+               ztmp(:) = REAL(jk_exchg(jb_loc,:), wp)
+
+               ! Collect indices of valid (non-zero) values
+               klen = COUNT(jk_exchg(jb_loc,:) /= 0)
+               ALLOCATE(klvl(klen), STAT=ialloc)
+               IF( ialloc > 0 ) THEN
+                  CALL ctl_stop( 'isfpar: unable to allocate klvl' )   ;   RETURN
+               ENDIF
+               klvl = PACK([(jj, jj = 1, jpk)], MASK = jk_exchg(jb_loc,:) /= 0)
+
+               DO jk = 1, jpk
+                  IF (jk_exchg(jb_loc,jk) == 0) THEN
+
+                     ! Find closest valid index to current jk
+                     kbest = MINLOC(ABS(klvl - jk), 1)
+ 
+                     ! Fill with nearest valid vertical level
+                     ztmp(jk) = jk_exchg(jb_loc,klvl(kbest))
+                  END IF
+               END DO
+               DEALLOCATE(klvl)
+               !
+               jk_exchg(jb_loc,:) = INT(ztmp(:))
+               !
+            ELSE
+               ! need to do the mpp_sum here to match the one done above by subdomain that contain the basin jb_glo
+               ctmp(:) = CMPLX( 0.e0, 0.e0, dp )
+               CALL mpp_sum( 'isf_par_init', ctmp(:) )  
+            END IF
+            !
+         END DO
+         DEALLOCATE(zisf_par_area_glo)
          !
       CASE ( 'oasis' )
          !
