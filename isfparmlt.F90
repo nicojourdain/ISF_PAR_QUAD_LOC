@@ -221,7 +221,7 @@ CONTAINS
       REAL(wp), DIMENSION(nbasins_glo,jpk) :: zmelt ! Parameterised melt per basin and per level [kg s^-1]
       REAL(wp), DIMENSION(nbasins_glo,jpk) :: ztf2s ! TF*|TF|*Sloc for interfacial cells  [degC^2 1.e-3]
       INTEGER  :: ji, jj, jk, jb_loc, jb_glo ! dummy loop indices
-      REAL(wp) :: zcoef,toto                 ! Constant coefficient used in the param [kg m^-2 s^-1 degC^-2 1.e3]
+      REAL(wp) :: zcoef                      ! Constant coefficient used in the param [kg m^-2 s^-1 degC^-2 1.e3]
       !!----------------------------------------------------------------------
       !
       ! 0: constant definition
@@ -261,10 +261,6 @@ CONTAINS
             ! Calculate ztftfs3d as TF*|TF|*Sloc*e1t*e2t (where TF = thermal forcing) [degC^2 1.e-3 m^2]:
             !     * tmask_i to avoid double count of halo cells (case basin over multiple sub domains)
             DO jk = 1,jpk
-!               DO_2D( 0, 0, 0, 0 ) 
-!                  ztf2s(jb_glo,jk) = ztf2s(jb_glo,jk) + ( ts(ji,jj,jk,jp_tem,Kmm) - ztf3d(ji,jj,jk) ) * ABS( ts(ji,jj,jk,jp_tem,Kmm) - ztf3d(ji,jj,jk) ) &
-!                  &                     * ts(ji,jj,jk,jp_sal,Kmm) * e1e2t(ji,jj) * mskisf_exchg(ji,jj,jb_loc) * tmask(ji,jj,jk) * tmask_i(ji,jj)
-!               END_2D
                ctf2s(jb_glo,jk)= local_sum( ( ts(:,:,jk,jp_tem,Kmm) - ztf3d(:,:,jk) ) * ABS( ts(:,:,jk,jp_tem,Kmm) - ztf3d(:,:,jk) ) &
                         &                   * ts(:,:,jk,jp_sal,Kmm) * e1e2t(:,:) * mskisf_exchg(:,:,jb_loc) * tmask(:,:,jk) / MAX(area_exchg(jb_loc,jk),zeps) )
             END DO
@@ -281,7 +277,6 @@ CONTAINS
       !
       pqfwf(:,:)      = 0._wp
       DO jb_glo=1,nbasins_glo
-!DEBUG         IF ( (lwp) .AND. (jb_glo == 99) .AND. (kt==1) ) PRINT *,'ztf2s :',ztf2s(jb_glo,:)
          !
          IF ( ln_exchg(jb_glo) ) THEN
             !
@@ -313,8 +308,8 @@ CONTAINS
       !
       ! 3: Diagnostics
       ! output per basin and per vertical level (to possibly redistribute per depth to finer-scale ice shelf draft):
-      CALL iom_put('melt_bas_isf_par', zmelt )    ! parameterised melt [kg/s] -> to be redistributed to ice-sheet model
-      CALL iom_put('tf2s_bas_isf_par', ztf2s )  ! mean ( TF*|TF|*Sloc ) [degC^2 1.e-3]    -> debug/check diagnostic
+      CALL iom_put('melt_bas_isf_par', zmelt(:,:) )  ! parameterised melt [kg/s] -> to be redistributed to ice-sheet model
+      CALL iom_put('tf2s_bas_isf_par', ztf2s(:,:) )  ! mean ( TF*|TF|*Sloc ) [degC^2 1.e-3]    -> debug/check diagnostic
       !
       ! 4: Output of the subroutine
       ! Associated heat flux and heat content

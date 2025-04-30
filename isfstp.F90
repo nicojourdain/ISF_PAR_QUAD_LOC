@@ -218,6 +218,13 @@ CONTAINS
             WRITE(numout,*) '      ice shelf melt parametrisation          ln_isfpar_mlt   = ', ln_isfpar_mlt
             IF ( ln_isfpar_mlt ) THEN
                WRITE(numout,*) '         isf parametrisation formulation         cn_isfpar_mlt   = ', TRIM(cn_isfpar_mlt)
+               IF ( TRIM(cn_isfpar_mlt) == 'quad_loc' ) THEN
+                  WRITE(numout,*) '            basin file sn_isfpar_basin%name = ', TRIM(sn_isfpar_basin%clname)
+                  WRITE(numout,*) '            basin map variable name sn_isfpar_basin% = ', TRIM(sn_isfpar_basin%clvar)
+                  WRITE(numout,*) '            area distribution variable name sn_isfpar_area% = ', TRIM(sn_isfpar_area%clvar)
+                  WRITE(numout,*) '            number of basin nn_isfpar_basin = ', nn_isfpar_basin
+                  WRITE(numout,*) '            Tuning coeficient rn_isfpar_Kcoeff = ', rn_isfpar_Kcoeff
+               END IF
             END IF
             WRITE(numout,*) ''
             !

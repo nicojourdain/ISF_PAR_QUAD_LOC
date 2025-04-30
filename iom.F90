@@ -29,7 +29,7 @@ MODULE iom
    USE lib_mpp           ! MPP library
    USE sbc_oce  , ONLY :   nn_fsbc, ght_abl, ghw_abl, e3t_abl, e3w_abl, jpka, jpkam1
    USE icb_oce  , ONLY :   nclasses, class_num       !  !: iceberg classes
-   USE isf_oce  , ONLY :   nbasins_glo               !  !: basin used in par_quad
+   USE isf_oce  , ONLY :   rbasisf_num               !  !: basin used in par_quad
 #if defined key_si3
    USE ice      , ONLY :   jpl
 #endif
@@ -263,8 +263,9 @@ CONTAINS
 #if defined key_top
          IF( ALLOCATED(profsed) ) CALL iom_set_axis_attr( "profsed", paxis = profsed )
 #endif
-         CALL iom_set_axis_attr( "icbcla", class_num )
-         CALL iom_set_axis_attr( "nisfbas", (/ (REAL(ji,wp), ji=1, nbasins_glo) /) )
+         CALL iom_set_axis_attr( "icbcla" , class_num   )
+         IF ( lwp ) PRINT *, SIZE(rbasisf_num)
+         CALL iom_set_axis_attr( "nisfbas", paxis = rbasisf_num ) ! isf basin id array
          CALL iom_set_axis_attr( "iax_20C", (/ REAL(20,wp) /) )   ! strange syntaxe and idea...
          CALL iom_set_axis_attr( "iax_26C", (/ REAL(26,wp) /) )   ! strange syntaxe and idea...
          CALL iom_set_axis_attr( "iax_28C", (/ REAL(28,wp) /) )   ! strange syntaxe and idea...
@@ -2463,6 +2464,31 @@ CONTAINS
       CALL iom_update_file_name('ptr')
       !
    END SUBROUTINE set_grid_znl
+
+   SUBROUTINE set_grid_isfbas( plat )
+      !!----------------------------------------------------------------------
+      !!                     ***  ROUTINE set_grid_isfbas  ***
+      !!
+      !! ** Purpose :   define grids for ice shelf output per depth and per basin
+      !!
+      !!----------------------------------------------------------------------
+      REAL(wp), DIMENSION(jpi,jpj), INTENT(in) ::   plat
+      !
+      INTEGER  :: ix, iy
+      REAL(wp), DIMENSION(:), ALLOCATABLE  ::   zlon
+      !!----------------------------------------------------------------------
+      !
+      ALLOCATE( zlon(Ni_0*Nj_0) )       ;       zlon(:) = 0._wp
+      !
+      CALL iom_set_domain_attr("gznl", ni_glo=Ni0glo, nj_glo=Nj0glo, ibegin=mig0(Nis0)-1, jbegin=mjg0(Njs0)-1, ni=Ni_0, nj=Nj_0)
+      CALL iom_set_domain_attr("gznl", data_dim=2, data_ibegin = -nn_hls, data_ni = jpi, data_jbegin = -nn_hls, data_nj = jpj)
+      CALL iom_set_domain_attr("gznl", lonvalue = real(zlon, dp),   &
+         &                             latvalue = real(RESHAPE(plat(Nis0:Nie0, Njs0:Nje0),(/ Ni_0*Nj_0 /)),dp))
+      CALL iom_set_zoom_domain_attr("ptr", ibegin=ix-1, jbegin=0, ni=1, nj=Nj0glo)
+      !
+      CALL iom_update_file_name('ptr')
+      !
+   END SUBROUTINE set_grid_isfbas
 
 
    SUBROUTINE set_scalar

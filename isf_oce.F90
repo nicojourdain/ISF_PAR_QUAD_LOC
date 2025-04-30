@@ -114,6 +114,7 @@ MODULE isf_oce
    LOGICAL,   PUBLIC, ALLOCATABLE, SAVE, DIMENSION(:)     :: ln_exchg                      !: indicates whether a given basin is active or not (i.e. zero total exchange area) 
    INTEGER  , PUBLIC, ALLOCATABLE, SAVE, DIMENSION(:)     :: idx_basin_glo_to_loc          !: mapping between the global and local basin index
    INTEGER  , PUBLIC, ALLOCATABLE, SAVE, DIMENSION(:)     :: idx_basin_loc_to_glo          !: mapping between the global and local basin index
+   REAL(wp) , PUBLIC, ALLOCATABLE, SAVE, DIMENSION(:)     :: rbasisf_num                  !: basin id list
    !
    ! 2.4 -------- coupling namelist parameter -------------
    INTEGER , PUBLIC                                        ::   nstp_iscpl   !:
@@ -150,6 +151,8 @@ CONTAINS
          ALLOCATE(idx_basin_glo_to_loc(nbasins_glo), STAT=ialloc)
          ierr = ierr + ialloc
          ALLOCATE(ln_exchg(nbasins_glo), STAT=ialloc)
+         ierr = ierr + ialloc
+         ALLOCATE(rbasisf_num(nbasins_glo), STAT=ialloc)
          ierr = ierr + ialloc
       ELSE IF (TRIM(cloc) == 'loc') THEN 
          !

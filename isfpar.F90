@@ -199,8 +199,14 @@ CONTAINS
          CALL isf_alloc_par_quad('glo')
          !
          ! read basin ID (2d map)
-         CALL read_2dcstdta(TRIM(sn_isfpar_basin%clname), TRIM(sn_isfpar_basin%clvar), zzid)
-         id_basin_isfpar = NINT(zzid)
+         CALL iom_open (TRIM(sn_isfpar_basin%clname), inum)
+         ! get basin map
+         CALL iom_get  ( inum, jpdom_global , TRIM(sn_isfpar_basin%clvar), zzid)
+         id_basin_isfpar(:,:) = NINT(zzid(:,:))
+         ! get basin array
+         !CALL iom_get  ( inum, jpdom_unknown, 'basin', rbasisf_num(1:nbasins_glo))
+         !CALL iom_close( inum )
+         rbasisf_num(:) = 0._wp
          !
          ! read non-resolved (i.e. parameterised) ice-shelf area [m2] per basin and per vertical level
          ALLOCATE(zisf_par_area_glo(nbasins_glo,jpk), STAT=ialloc)
@@ -259,18 +265,6 @@ CONTAINS
                !
                jb_loc = idx_basin_glo_to_loc(jb_glo)
                !
-!                     ctmp = CMPLX( 0.e0, 0.e0, dp )   ! warning ctmp is cumulated
-!      DO jk = 1, ipk
-!        DO jj = ijs, ije
-!          DO ji = iis, iie
-!             ztmp =  ARRAY_IN(ji,jj,jk) * MASK_ARRAY(ji,jj)
-!             CALL DDPDD( CMPLX( ztmp, 0.e0, dp ), ctmp )
-!          END DO
-!        END DO
-!      END DO
-!      CALL mpp_sum( cdname, ctmp )   ! sum over the global domain
-!      glob_sum_/**/XD = REAL(ctmp,wp)
-
                ! Area of the exchange zone per basin and per vertical level [m^2]
                DO jk = 1,jpk
                   ctmp(jk) = local_sum( e1e2t(:,:) * tmask(:,:,jk) * mskisf_exchg(:,:,jb_loc) )
