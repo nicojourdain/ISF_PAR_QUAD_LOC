@@ -269,7 +269,7 @@ CONTAINS
             ! (will be redistributed between zmin and zmax by subroutines isf_hdiv_mlt and tra_isf_mlt)
             ! NB: here, jk_exchg is used to put the meltwater in ocean cells of the exchange zone.
             pqfwf(:,:) = pqfwf(:,:) + zmelt(kbasin,jk) * mskisf_exchg(:,:,kbasin) &
-            &                         * tmask(:,:,jk_exchg(kbasin,jk)) / area_effec(kbasin,jk_exchg(kbasin,jk))
+            &                         * tmask(:,:,jk_exchg(kbasin,jk)) / area_exchg(kbasin,jk_exchg(kbasin,jk))
             !
           END DO
         ELSE
