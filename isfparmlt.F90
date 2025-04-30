@@ -302,7 +302,6 @@ CONTAINS
                pqfwf(:,:) = pqfwf(:,:) + zmelt(jb_glo,jk) * mskisf_exchg(:,:,jb_loc) * tmask(:,:,jk_exchg(jb_loc,jk)) / MAX(area_exchg(jb_loc,jk_exchg(jb_loc,jk)),zeps)
                !
             END DO
-            IF (lwp) PRINT *, jb_glo, SUM(area_exchg(jb_loc,:)), SUM(risf_par_area_loc(jb_loc,:)), SUM(zmelt(jb_glo,:))
          ELSE
             !
             ! basin not in this domain, set to missing value
@@ -311,11 +310,6 @@ CONTAINS
          ENDIF
          !
       ENDDO
-
-      IF (lwp) PRINT *, kt
-      IF (lwp) PRINT *, SUM(ztf2s)
-      toto=glob_sum('debug',pqfwf)
-      IF (lwp) PRINT *, toto
       !
       ! 3: Diagnostics
       ! output per basin and per vertical level (to possibly redistribute per depth to finer-scale ice shelf draft):
