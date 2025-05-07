@@ -13,19 +13,19 @@ MODULE isfstp
    !!   isfstp       : compute iceshelf melt and heat flux
    !!----------------------------------------------------------------------
    USE isf_oce                                      ! isf variables
+   USE isfpar                                       ! ice shelf parametrisation
+   USE isfcav                                       ! ice shelf cavity
    USE isfload, ONLY: isf_load                      ! ice shelf load
    USE isftbl , ONLY: isf_tbl_lvl                   ! ice shelf boundary layer
-   USE isfpar , ONLY: isf_par, isf_par_init         ! ice shelf parametrisation
-   USE isfcav , ONLY: isf_cav, isf_cav_init         ! ice shelf cavity
    USE isfcpl , ONLY: isfcpl_rst_write, isfcpl_init ! isf variables
 
    USE dom_oce        ! ocean space and time domain
-   USE oce      , ONLY: ssh                           ! sea surface height
-   USE domvvl,  ONLY: ln_vvl_zstar                      ! zstar logical
-   USE zdfdrg,  ONLY: r_Cdmin_top, r_ke0_top            ! vertical physics: top/bottom drag coef.
+   USE oce   ,  ONLY: ssh                           ! sea surface height
+   USE domvvl,  ONLY: ln_vvl_zstar                  ! zstar logical
+   USE zdfdrg,  ONLY: r_Cdmin_top, r_ke0_top        ! vertical physics: top/bottom drag coef.
    !
    USE lib_mpp, ONLY: ctl_stop, ctl_nam
-   USE fldread, ONLY: FLD, FLD_N
+!   USE fldread, ONLY: FLD, FLD_N
    USE in_out_manager ! I/O manager
    USE timing
 
@@ -33,7 +33,7 @@ MODULE isfstp
    PRIVATE
 
    PUBLIC   isf_stp, isf_init, isf_nam  ! routine called in sbcmod and divhor
-
+   !
    !! * Substitutions
 #  include "domzgr_substitute.h90"
    !!----------------------------------------------------------------------
@@ -218,13 +218,6 @@ CONTAINS
             WRITE(numout,*) '      ice shelf melt parametrisation          ln_isfpar_mlt   = ', ln_isfpar_mlt
             IF ( ln_isfpar_mlt ) THEN
                WRITE(numout,*) '         isf parametrisation formulation         cn_isfpar_mlt   = ', TRIM(cn_isfpar_mlt)
-               IF ( TRIM(cn_isfpar_mlt) == 'quad_loc' ) THEN
-                  WRITE(numout,*) '            basin file sn_isfpar_basin%name = ', TRIM(sn_isfpar_basin%clname)
-                  WRITE(numout,*) '            basin map variable name sn_isfpar_basin% = ', TRIM(sn_isfpar_basin%clvar)
-                  WRITE(numout,*) '            area distribution variable name sn_isfpar_area% = ', TRIM(sn_isfpar_area%clvar)
-                  WRITE(numout,*) '            number of basin nn_isfpar_basin = ', nn_isfpar_basin
-                  WRITE(numout,*) '            Tuning coeficient rn_isfpar_Kcoeff = ', rn_isfpar_Kcoeff
-               END IF
             END IF
             WRITE(numout,*) ''
             !

@@ -8,9 +8,9 @@ MODULE isfparmlt
    !!            4.2  ! 2025-04  (N. Jourdain) Interactive quadratic parameterisation
    !!----------------------------------------------------------------------
 
-   USE isf_oce                  ! ice shelf
-   USE isftbl , ONLY: isf_tbl   ! ice shelf depth average
-   USE isfutils,ONLY: debug     ! debug subroutine
+   USE isf_oce                      ! ice shelf
+   USE isftbl , ONLY: isf_tbl       ! ice shelf depth average
+   USE isfutils,ONLY: debug         ! debug subroutine
 
    USE dom_oce                        ! ocean space and time domain
    USE oce    , ONLY: ts              ! ocean dynamics and tracers
@@ -29,6 +29,7 @@ MODULE isfparmlt
 
    PUBLIC  isfpar_mlt 
 
+   TYPE(FLD), PUBLIC, ALLOCATABLE, SAVE, DIMENSION(:)     :: sf_isfpar_fwf
 
    !! * Substitutions
 #  include "do_loop_substitute.h90"
@@ -221,7 +222,7 @@ CONTAINS
       REAL(wp), DIMENSION(nbasins_glo,jpk) :: zmelt ! Parameterised melt per basin and per level [kg s^-1]
       REAL(wp), DIMENSION(nbasins_glo,jpk) :: ztf2s ! TF*|TF|*Sloc for interfacial cells  [degC^2 1.e-3]
       INTEGER  :: ji, jj, jk, jb_loc, jb_glo ! dummy loop indices
-      REAL(wp) :: zcoef                      ! Constant coefficient used in the param [kg m^-2 s^-1 degC^-2 1.e3]
+      REAL(wp) :: zcoef,zsum                 ! Constant coefficient used in the param [kg m^-2 s^-1 degC^-2 1.e3]
       !!----------------------------------------------------------------------
       !
       ! 0: constant definition
@@ -275,7 +276,7 @@ CONTAINS
       CALL mpp_sum( 'isfparmlt', ctmp(:) )
       ztf2s(:,:) = REAL(RESHAPE(ctmp(:), [nbasins_glo, jpk]),wp)
       !
-      pqfwf(:,:)      = 0._wp
+      pqfwf(:,:) = 0._wp
       DO jb_glo=1,nbasins_glo
          !
          IF ( ln_exchg(jb_glo) ) THEN

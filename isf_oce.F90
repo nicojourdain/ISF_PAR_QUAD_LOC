@@ -17,7 +17,6 @@ MODULE isf_oce
    USE par_oce       , ONLY: jpi, jpj, jpk
    USE in_out_manager, ONLY: wp, jpts ! I/O manager
    USE lib_mpp       , ONLY: ctl_stop, mpp_sum      ! MPP library
-   USE fldread        ! read input fields
 
    IMPLICIT NONE
 
@@ -44,19 +43,12 @@ MODULE isf_oce
    CHARACTER(LEN=256), PUBLIC :: cn_gammablk     !: gamma formulation
    CHARACTER(LEN=256), PUBLIC :: cn_isfcav_mlt   !: melt formulation (cavity/param)
    CHARACTER(LEN=256), PUBLIC :: cn_isfload      !: ice shelf load computation method
-   TYPE(FLD_N)       , PUBLIC :: sn_isfcav_fwf   !: information about the isf melting file to be read
    !
    ! 0.3 -------- ice shelf cavity parametrised namelist parameter -------------
    LOGICAL           , PUBLIC :: ln_isfpar_mlt      !: logical for the computation of melt inside the cavity
    REAL(wp)          , PUBLIC :: rn_isfpar_bg03_gt0 !: temperature exchange coeficient [m/s]
    REAL(wp)          , PUBLIC :: rn_isfpar_Kcoeff   !: calibration coefficient (K in Burgard 2022, eq. 16) [-] 
    CHARACTER(LEN=256), PUBLIC :: cn_isfpar_mlt      !: melt formulation (cavity/param)
-   TYPE(FLD_N)       , PUBLIC :: sn_isfpar_fwf      !: information about the isf melting file to be read
-   TYPE(FLD_N)       , PUBLIC :: sn_isfpar_zmax     !: information about the grounding line depth file to be read
-   TYPE(FLD_N)       , PUBLIC :: sn_isfpar_zmin     !: information about the calving   line depth file to be read
-   TYPE(FLD_N)       , PUBLIC :: sn_isfpar_Leff     !: information about the effective length     file to be read
-   TYPE(FLD_N)       , PUBLIC :: sn_isfpar_basin    !: information about the ice-shelf basins     file to be read
-   TYPE(FLD_N)       , PUBLIC :: sn_isfpar_area     !: information on non-resolved ice-shelf area file to be read
    INTEGER, PUBLIC            :: nn_isfpar_basin    !: maximum number used for the basins ID
    !
    ! 0.4 -------- coupling namelist parameter -------------
@@ -89,7 +81,6 @@ MODULE isf_oce
    REAL(wp) , PUBLIC, ALLOCATABLE, SAVE, DIMENSION(:,:)   :: rhisf_tbl_cav, rfrac_tbl_cav  !: 
    REAL(wp) , PUBLIC, ALLOCATABLE, SAVE, DIMENSION(:,:)   :: fwfisf_cav   , fwfisf_cav_b   !: before and now net fwf from the ice shelf        [kg/m2/s]
    REAL(wp) , PUBLIC, ALLOCATABLE, SAVE, DIMENSION(:,:,:) :: risf_cav_tsc , risf_cav_tsc_b !: before and now T & S isf contents [K.m/s & PSU.m/s]  
-   TYPE(FLD), PUBLIC, ALLOCATABLE, SAVE, DIMENSION(:)     :: sf_isfcav_fwf                 !:
    !
    REAL(wp) , PUBLIC                                      :: risf_lamb1, risf_lamb2, risf_lamb3  ! freezing point linearization coeficient
    !
@@ -99,7 +90,6 @@ MODULE isf_oce
    REAL(wp) , PUBLIC, ALLOCATABLE, SAVE, DIMENSION(:,:)   :: rhisf_tbl_par, rfrac_tbl_par  !: 
    REAL(wp) , PUBLIC, ALLOCATABLE, SAVE, DIMENSION(:,:)   :: fwfisf_par   , fwfisf_par_b   !: before and now net fwf from the ice shelf        [kg/m2/s]
    REAL(wp) , PUBLIC, ALLOCATABLE, SAVE, DIMENSION(:,:,:) :: risf_par_tsc , risf_par_tsc_b !: before and now T & S isf contents [K.m/s & PSU.m/s]  
-   TYPE(FLD), PUBLIC, ALLOCATABLE, SAVE, DIMENSION(:)     :: sf_isfpar_fwf                 !:
    !
    REAL(wp) , PUBLIC, ALLOCATABLE, SAVE, DIMENSION(:,:)   :: rhisf0_tbl_par                !: thickness of tbl (initial value)  [m]
    REAL(wp) , PUBLIC, ALLOCATABLE, SAVE, DIMENSION(:,:)   :: risfLeff                      !:

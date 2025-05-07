@@ -19,7 +19,7 @@ MODULE isfpar
    !
    USE isfrst   , ONLY: isfrst_write, isfrst_read ! ice shelf restart read/write subroutine
    USE isftbl   , ONLY: isf_tbl_ktop, isf_tbl_lvl ! ice shelf top boundary layer properties subroutine
-   USE isfparmlt, ONLY: isfpar_mlt                ! ice shelf melt formulation subroutine
+   USE isfparmlt, ONLY: sf_isfpar_fwf, isfpar_mlt ! ice shelf melt formulation subroutine
    USE isfdiags , ONLY: isf_diags_flx             ! ice shelf diags subroutine
    USE isfutils , ONLY: debug, read_2dcstdta      ! ice shelf debug subroutine
    !
@@ -37,6 +37,13 @@ MODULE isfpar
    PRIVATE
 
    PUBLIC   isf_par, isf_par_init
+
+   TYPE(FLD_N), PUBLIC :: sn_isfpar_fwf      !: information about the isf melting file to be read
+   TYPE(FLD_N), PUBLIC :: sn_isfpar_zmax     !: information about the grounding line depth file to be read
+   TYPE(FLD_N), PUBLIC :: sn_isfpar_zmin     !: information about the calving   line depth file to be read
+   TYPE(FLD_N), PUBLIC :: sn_isfpar_Leff     !: information about the effective length     file to be read
+   TYPE(FLD_N), PUBLIC :: sn_isfpar_basin    !: information about the ice-shelf basins     file to be read
+   TYPE(FLD_N), PUBLIC :: sn_isfpar_area     !: information on non-resolved ice-shelf area file to be read
 
    !! * Substitutions   
 #  include "do_loop_substitute.h90"
@@ -124,6 +131,7 @@ CONTAINS
       INTEGER , ALLOCATABLE, DIMENSION(:)   :: klvl
       REAL(wp), ALLOCATABLE, DIMENSION(:,:) :: zisf_par_area_glo  ! area distribution per isf basin (from input file)
       REAL(wp), DIMENSION(jpi,jpj)     :: ztblmax, ztblmin, zzid
+      !
       !!------------------------------------------------------------------------------
       !
       ! allocation
@@ -194,6 +202,14 @@ CONTAINS
          IF(lwp) WRITE(numout,*) '      ==>>>   Ice shelf melt rate calculated through'
          IF(lwp) WRITE(numout,*) '              the quadratic-local parametrisation (cn_isfmlt_par = quad_loc)'
          !
+         IF ( TRIM(cn_isfpar_mlt) == 'quad_loc' ) THEN
+            IF(lwp) WRITE(numout,*) '            basin file sn_isfpar_basin%name = ', TRIM(sn_isfpar_basin%clname)
+            IF(lwp) WRITE(numout,*) '            basin map variable name sn_isfpar_basin% = ', TRIM(sn_isfpar_basin%clvar)
+            IF(lwp) WRITE(numout,*) '            area distribution variable name sn_isfpar_area% = ', TRIM(sn_isfpar_area%clvar)
+            IF(lwp) WRITE(numout,*) '            number of basin nn_isfpar_basin = ', nn_isfpar_basin
+            IF(lwp) WRITE(numout,*) '            Tuning coeficient rn_isfpar_Kcoeff = ', rn_isfpar_Kcoeff
+         END IF
+         !
          nbasins_glo = nn_isfpar_basin
          !
          CALL isf_alloc_par_quad('glo')
@@ -204,8 +220,8 @@ CONTAINS
          CALL iom_get  ( inum, jpdom_global , TRIM(sn_isfpar_basin%clvar), zzid)
          id_basin_isfpar(:,:) = NINT(zzid(:,:))
          ! get basin array
-         !CALL iom_get  ( inum, jpdom_unknown, 'basin', rbasisf_num(1:nbasins_glo))
-         !CALL iom_close( inum )
+         CALL iom_get  ( inum, jpdom_unknown, 'basin', rbasisf_num(1:nbasins_glo))
+         CALL iom_close( inum )
          rbasisf_num(:) = 0._wp
          !
          ! read non-resolved (i.e. parameterised) ice-shelf area [m2] per basin and per vertical level

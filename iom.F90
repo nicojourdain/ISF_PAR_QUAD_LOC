@@ -264,7 +264,6 @@ CONTAINS
          IF( ALLOCATED(profsed) ) CALL iom_set_axis_attr( "profsed", paxis = profsed )
 #endif
          CALL iom_set_axis_attr( "icbcla" , class_num   )
-         IF ( lwp ) PRINT *, SIZE(rbasisf_num)
          CALL iom_set_axis_attr( "nisfbas", paxis = rbasisf_num ) ! isf basin id array
          CALL iom_set_axis_attr( "iax_20C", (/ REAL(20,wp) /) )   ! strange syntaxe and idea...
          CALL iom_set_axis_attr( "iax_26C", (/ REAL(26,wp) /) )   ! strange syntaxe and idea...
