@@ -17,11 +17,11 @@ MODULE isfparmlt
    USE phycst , ONLY: rcp, rho0, grav ! physical constants
    USE eosbn2 , ONLY: eos_fzp         ! equation of state
 
-   USE in_out_manager              ! I/O manager
-   USE iom        , ONLY: iom_put  ! I/O library
+   USE in_out_manager                          ! I/O manager
+   USE iom        , ONLY: iom_put, iom_use     ! I/O library
    USE fldread    , ONLY: fld_read, FLD, FLD_N !
    USE lib_fortran, ONLY: local_sum, glob_sum
-   USE lib_mpp    , ONLY: mpp_sum, ctl_stop !
+   USE lib_mpp    , ONLY: mpp_sum, mpp_max, ctl_stop    !
 
    IMPLICIT NONE
 
@@ -209,43 +209,29 @@ CONTAINS
       INTEGER,  INTENT(in) :: kt
       INTEGER,  INTENT(in) :: Kmm    !  ocean time level index
       !!--------------------------------------------------------------------
-      REAL(wp) ::   zfillvalue = 1.0e20   ! missing values in outputs
-      REAL(wp) ::   zf         = 1.4e-4   ! mean Coriolis parameter [s^-1]
-      REAL(wp) ::   zbeta      = 7.8e-4   ! salt contraction coefficient [1.e3]
-      REAL(wp) ::   zsin_theta = 2.9e-3   ! assuming a representative "Antarctic slope" [1]
-      REAL(wp) ::   zeps       = 1.0e-20
-      !!--------------------------------------------------------------------
       COMPLEX(dp), DIMENSION(nbasins_glo*jpk) :: ctmp  ! 1d version of ztf2s for the mppsum
       COMPLEX(dp), DIMENSION(nbasins_glo,jpk) :: ctf2s ! TF*|TF|*Sloc for interfacial cells  [degC^2 1.e-3]
-      REAL(wp), DIMENSION(jpi,jpj)         :: ztfrz ! mean freezing temperature in interfacial water columns [degC]
-      REAL(wp), DIMENSION(jpi,jpj,jpk)     :: ztf3d ! 3d thermal forcing [degC]
-      REAL(wp), DIMENSION(nbasins_glo,jpk) :: zmelt ! Parameterised melt per basin and per level [kg s^-1]
-      REAL(wp), DIMENSION(nbasins_glo,jpk) :: ztf2s ! TF*|TF|*Sloc for interfacial cells  [degC^2 1.e-3]
-      INTEGER  :: ji, jj, jk, jb_loc, jb_glo ! dummy loop indices
-      REAL(wp) :: zcoef,zsum                 ! Constant coefficient used in the param [kg m^-2 s^-1 degC^-2 1.e3]
+      REAL(wp)   , DIMENSION(nbasins_glo*jpk) :: ztmp  ! 1d version for the mppsum
+      REAL(wp), DIMENSION(jpi,jpj)         :: ztfrz    ! mean freezing temperature in interfacial water columns [degC]
+      REAL(wp), DIMENSION(jpi,jpj,jpk)     :: ztfrz3d  ! 3d freezing temperature [degC]
+      REAL(wp), DIMENSION(jpi,jpj)         :: ztf      ! 2d thermal forcing [degC]
+      REAL(wp), DIMENSION(nbasins_glo,jpk) :: zmelt    ! Parameterised melt per basin and per level [kg s^-1]
+      REAL(wp), DIMENSION(nbasins_glo,jpk) :: ztf2s    ! TF*|TF|*Sloc for interfacial cells  [degC^2 1.e-3]
+      INTEGER  :: ji, jj, jk, jke, jb_loc, jb_glo      ! dummy loop indices
+      REAL(wp) :: zcoef                                ! Constant coefficient used in the param [kg m^-2 s^-1 degC^-2 1.e3]
       !!----------------------------------------------------------------------
-      !
-      ! 0: constant definition
-      ! ----------------------
-      ! 
-      ! Coefficient for the melting parameterization:
-      !   see eq. 14 of Burgard et al. (2022) 
-      !   NB: their melt is in meters of ice per second while we here use kg/m2/s
-      !   NB1: rn_isfpar_Kcoeff is defined in eq. 16 of Brugard et al. (2022)
-      !        and was calibrated at 1.16e-4 in that paper (here specified by user).
-      zcoef = rn_isfpar_Kcoeff * rho0 * ( rcp / rLfusisf )**2 * zbeta * grav * zsin_theta * 0.5_wp / zf
       !
       ! 1: freezing point definition
       ! ----------------------------
       ! 
       ! CHECK if line below needed for case nbasins_loc == 0 (check presence of global com)
-      ! ztf3d is the freezing temperature at all levels:
-      DO jk = 1,jpk
-         CALL eos_fzp(ts(:,:,jk,jp_sal,Kmm), ztf3d(:,:,jk), gdept(:,:,jk,Kmm))
+      ! ztfrz3d is the freezing temperature at all levels:
+      DO jk = 1,jpk  ! check if jpk can be replace by MAX(jk_exchg(jb_loc,:)) but need generic init to 0 before
+         CALL eos_fzp(ts(:,:,jk,jp_sal,Kmm), ztfrz3d(:,:,jk), gdept(:,:,jk,Kmm))
       END DO
       ! ztfrz is the mean freezing temperature in the interfacial water columns, i.e., between
       ! specified zmin and zmax (only used for the heat content flux):
-      CALL isf_tbl(Kmm, ztf3d, ztfrz, 'T', misfkt_par, rhisf_tbl_par, misfkb_par, rfrac_tbl_par )
+      CALL isf_tbl(Kmm, ztfrz3d, ztfrz, 'T', misfkt_par, rhisf_tbl_par, misfkb_par, rfrac_tbl_par )
       !
       ! 2: Main computation
       ! ------------------
@@ -261,9 +247,11 @@ CONTAINS
             !
             ! Calculate ztftfs3d as TF*|TF|*Sloc*e1t*e2t (where TF = thermal forcing) [degC^2 1.e-3 m^2]:
             !     * tmask_i to avoid double count of halo cells (case basin over multiple sub domains)
-            DO jk = 1,jpk
-               ctf2s(jb_glo,jk)= local_sum( ( ts(:,:,jk,jp_tem,Kmm) - ztf3d(:,:,jk) ) * ABS( ts(:,:,jk,jp_tem,Kmm) - ztf3d(:,:,jk) ) &
-                        &                   * ts(:,:,jk,jp_sal,Kmm) * e1e2t(:,:) * mskisf_exchg(:,:,jb_loc) * tmask(:,:,jk) / MAX(area_exchg(jb_loc,jk),zeps) )
+            DO jk = 1,jpk    ! check if jpk can be replace by MAX(jk_exchg(jb_loc,:)) but need generic init to 0 before
+               ztf(:,:) = ts(:,:,jk,jp_tem,Kmm) - ztfrz3d(:,:,jk)
+               ctf2s(jb_glo,jk) = local_sum(   ztf(:,:) * ABS( ztf(:,:) ) * ts(:,:,jk,jp_sal,Kmm)    &
+                        &                    * e1e2t(:,:) * mskisf_exchg(:,:,jb_loc) * tmask(:,:,jk) )
+               ctf2s(jb_glo,jk) = ctf2s(jb_glo,jk) * r1_area_exchg(jb_loc,jk)
             END DO
          ELSE
             ctf2s(jb_glo,:) = CMPLX( 0.e0, 0.e0, dp )
@@ -274,7 +262,7 @@ CONTAINS
       ! because mpp_sum is only 0d or 1d, we need to reshape
       ctmp(:) = RESHAPE(ctf2s, [nbasins_glo * jpk] )
       CALL mpp_sum( 'isfparmlt', ctmp(:) )
-      ztf2s(:,:) = REAL(RESHAPE(ctmp(:), [nbasins_glo, jpk]),wp)
+      ztf2s(:,:) = REAL(RESHAPE(ctmp(:), [nbasins_glo, jpk]), wp)
       !
       pqfwf(:,:) = 0._wp
       DO jb_glo=1,nbasins_glo
@@ -286,18 +274,31 @@ CONTAINS
             ! 2.2: Melt computation
             ! --------------------------------
             !
-            DO jk = 1,jpk
+            DO jk = 1,jpk     ! check if jpk can be replace by MAX(jk_exchg(jb_loc,:)) but need generic init to 0 before
+               !
+               jke = jk_exchg(jb_loc,jk)
                !
                ! Melt per basin per vertical level [kg s^-1] :
                ! NB2: vertical extrapolation of levels with area_exchg=0 is done here using jk_exchg.
-               zmelt(jb_glo,jk) = zcoef * ztf2s(jb_glo,jk_exchg(jb_loc,jk)) * risf_par_area_loc(jb_loc,jk)
+               ! rtf2s_to_melt_loc = zcoef * zisf_par_area_glo in the init
+               zmelt(jb_glo,jk) = rtf2s_to_melt_loc(jb_loc,jk) * ztf2s(jb_glo,jke)
                !
                ! 2D net fresh water flux due to ice shelf melting ( > 0 from isf to oce) [kg m^-2 s^-1]
-               ! (will be redistributed between zmin and zmax by subroutines isf_hdiv_mlt and tra_isf_mlt)
-               ! if area_exchg = 0, zmelt is 0.
-               pqfwf(:,:) = pqfwf(:,:) + zmelt(jb_glo,jk) * mskisf_exchg(:,:,jb_loc) * tmask(:,:,jk_exchg(jb_loc,jk)) / MAX(area_exchg(jb_loc,jk_exchg(jb_loc,jk)),zeps)
+               pqfwf(:,:) = pqfwf(:,:) + zmelt(jb_glo,jk) * mskisf_exchg(:,:,jb_loc) * tmask(:,:,jke) * r1_area_exchg(jb_loc,jke)
                !
             END DO
+
+!            IF (jb_glo == 74) THEN
+!               IF (lwp) PRINT *, 'timestep : ',kt
+!               IF (lwp) PRINT *, ztf2s(jb_glo,:)
+!               IF (lwp) PRINT *, ''
+!               IF (lwp) PRINT *, zmelt(jb_glo,:)
+!               IF (lwp) PRINT *, ''
+!               DO jk = 1,jpk
+!                  IF (lwp) PRINT *, MAXVAL(zmelt(jb_glo,jk) * mskisf_exchg(:,:,jb_loc) * tmask(:,:,jk_exchg(jb_loc,jk)) * r1_area_exchg(jb_loc,jk_exchg(jb_loc,jk)) )
+!               END DO
+!            END IF
+
          ELSE
             !
             ! basin not in this domain, set to missing value
@@ -307,9 +308,16 @@ CONTAINS
          !
       ENDDO
       !
-      ! 3: Diagnostics
+     ! 3: Diagnostics
       ! output per basin and per vertical level (to possibly redistribute per depth to finer-scale ice shelf draft):
-      CALL iom_put('melt_bas_isf_par', zmelt(:,:) )  ! parameterised melt [kg/s] -> to be redistributed to ice-sheet model
+      IF ( iom_use('melt_bas_isf_par') ) THEN
+         ztmp(:) = RESHAPE(zmelt, [nbasins_glo * jpk] )
+         CALL mpp_max( 'isfparmlt', ztmp(:) )
+         zmelt(:,:) = RESHAPE(ztmp(:), [nbasins_glo, jpk])
+
+         CALL iom_put('melt_bas_isf_par', zmelt(:,:) )  ! parameterised melt [kg/s] -> to be redistributed to ice-sheet model
+      END IF
+      
       CALL iom_put('tf2s_bas_isf_par', ztf2s(:,:) )  ! mean ( TF*|TF|*Sloc ) [degC^2 1.e-3]    -> debug/check diagnostic
       !
       ! 4: Output of the subroutine

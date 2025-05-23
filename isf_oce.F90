@@ -99,8 +99,8 @@ MODULE isf_oce
    INTEGER  , PUBLIC, ALLOCATABLE, SAVE, DIMENSION(:,:,:) :: mskisf_exchg                  !: Exchanging water columns for the interactive param (sends thermal forcing and receives melt)
    INTEGER  , PUBLIC, ALLOCATABLE, SAVE, DIMENSION(:,:)   :: id_basin_isfpar               !: ID of the basin used for the melt parameterisations
    INTEGER  , PUBLIC, ALLOCATABLE, SAVE, DIMENSION(:,:)   :: jk_exchg                      !: Index of vertical level for extrapolation of exchange T,S profiles
-   REAL(wp) , PUBLIC, ALLOCATABLE, SAVE, DIMENSION(:,:)   :: risf_par_area_loc             !: non-resolved ice-shelf area per basin and per z level [m2]
-   REAL(wp) , PUBLIC, ALLOCATABLE, SAVE, DIMENSION(:,:)   :: area_exchg                    !: Total exchange area per vertical level for the interactive param [m2]
+   REAL(wp) , PUBLIC, ALLOCATABLE, SAVE, DIMENSION(:,:)   :: rtf2s_to_melt_loc             !: non-resolved ice-shelf area per basin and per z level [m2] * melt_coef
+   REAL(wp) , PUBLIC, ALLOCATABLE, SAVE, DIMENSION(:,:)   :: r1_area_exchg                 !: Total exchange area per vertical level for the interactive param [m-2]
    LOGICAL,   PUBLIC, ALLOCATABLE, SAVE, DIMENSION(:)     :: ln_exchg                      !: indicates whether a given basin is active or not (i.e. zero total exchange area) 
    INTEGER  , PUBLIC, ALLOCATABLE, SAVE, DIMENSION(:)     :: idx_basin_glo_to_loc          !: mapping between the global and local basin index
    INTEGER  , PUBLIC, ALLOCATABLE, SAVE, DIMENSION(:)     :: idx_basin_loc_to_glo          !: mapping between the global and local basin index
@@ -135,7 +135,6 @@ CONTAINS
       ierr = 0
       IF (TRIM(cloc) == 'glo') THEN
          !
-         PRINT*, nbasins_glo
          ALLOCATE(id_basin_isfpar(jpi,jpj), STAT=ialloc)
          ierr = ierr + ialloc
          ALLOCATE(idx_basin_glo_to_loc(nbasins_glo), STAT=ialloc)
@@ -150,11 +149,10 @@ CONTAINS
          ierr = ierr + ialloc
          ALLOCATE(mskisf_exchg(jpi,jpj,nbasins_loc), STAT=ialloc)
          ierr = ierr + ialloc
-         ALLOCATE(jk_exchg(nbasins_loc,jpk),area_exchg(nbasins_loc,jpk), STAT=ialloc)
+         ALLOCATE(jk_exchg(nbasins_loc,jpk), r1_area_exchg(nbasins_loc,jpk), STAT=ialloc)
          ierr = ierr + ialloc
-         ALLOCATE(risf_par_area_loc(nbasins_loc,jpk), STAT=ialloc)
+         ALLOCATE(rtf2s_to_melt_loc(nbasins_loc,jpk), STAT=ialloc)
          ierr = ierr + ialloc
-         PRINT*, 'loc',nbasins_loc,ierr
       ELSE
          CALL ctl_stop( 'STOP', 'unknown cloc')
       END IF

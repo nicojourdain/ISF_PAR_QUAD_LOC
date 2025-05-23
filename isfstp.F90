@@ -196,7 +196,7 @@ CONTAINS
          IF ( ln_isf ) THEN
 #if key_qco 
 # if ! defined key_isf 
-            CALL ctl_stop( 'STOP', 'isf_ctl: ice shelf requires both ln_isf=T AND key_isf activated' ) 
+            IF (ln_isfcav ) CALL ctl_stop( 'STOP', 'isf_ctl: ice shelf requires both ln_isf=T AND key_isf activated' ) 
 # endif 
 #endif
             WRITE(numout,*) '      Add debug print in isf module           ln_isfdebug     = ', ln_isfdebug

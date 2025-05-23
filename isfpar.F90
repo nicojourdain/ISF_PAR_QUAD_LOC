@@ -124,21 +124,28 @@ CONTAINS
       !!
       !!------------------------------------------------------------------------------
       INTEGER                          :: ierr, inum, jb_loc, jb_glo, ji, jj, jk, indx
-      REAL(wp)                         :: epsln = 1.e-20_wp  
+      REAL(wp)                         :: zepsln = 1.e-20_wp  
       INTEGER                          :: kbest, kb_used, klen, ialloc
       REAL(wp), DIMENSION(jpk)         :: ztmp
       COMPLEX(dp), DIMENSION(jpk)      :: ctmp
       INTEGER , ALLOCATABLE, DIMENSION(:)   :: klvl
-      REAL(wp), ALLOCATABLE, DIMENSION(:,:) :: zisf_par_area_glo  ! area distribution per isf basin (from input file)
       REAL(wp), DIMENSION(jpi,jpj)     :: ztblmax, ztblmin, zzid
-      !
+      CHARACTER(1024)                  :: cinfo
+      !!--------------------------------------------------------------------
+      ! quad_loc
+      REAL(wp), ALLOCATABLE, DIMENSION(:,:) :: zisf_par_area_glo, zarea_exchg  ! area distribution per isf basin (from input file)
+      REAL(wp) ::   zf         = 1.4e-4   ! mean Coriolis parameter [s^-1]
+      REAL(wp) ::   zbeta      = 7.8e-4   ! salt contraction coefficient [1.e3]
+      REAL(wp) ::   zsin_theta = 2.9e-3   ! assuming a representative "Antarctic slope" [1]
+      REAL(wp) ::   zeps       = 1.0e-20
+      REAL(wp) ::   zcoef
       !!------------------------------------------------------------------------------
       !
       ! allocation
       CALL isf_alloc_par()
       !
       ! initialisation
-      misfkt_par(:,:)     = 1         ; misfkb_par(:,:)       = 1         
+      misfkt_par(:,:)     = 1._wp     ; misfkb_par(:,:)       = 1._wp
       rhisf_tbl_par(:,:)  = 1e-20     ; rfrac_tbl_par(:,:)    = 0.0_wp
       !
       ! define isf tbl tickness, top and bottom indice
@@ -154,6 +161,13 @@ CONTAINS
          ztblmin(:,:) = risfdep(:,:)
       END WHERE
       !
+      ! enforce zmin to be above the bottom (gdepw_0 of the bottom wet cell)
+      DO_2D( nn_hls, nn_hls, nn_hls, nn_hls )
+         IF (ztblmin(ji,jj) > gdepw_0(ji,jj,mbkt(ji,jj))) THEN
+            ztblmin(ji,jj) = gdepw_0(ji,jj,mbkt(ji,jj))
+         END IF
+      END_2D
+      !
       ! ensure ztblmax <= bathy
       WHERE ( ztblmax(:,:) > bathy(:,:) )
          ztblmax(:,:) = bathy(:,:)
@@ -167,7 +181,7 @@ CONTAINS
       rhisf0_tbl_par(:,:) = ztblmax(:,:) - ztblmin(:,:)
       !
       ! define iceshelf parametrisation mask
-      mskisf_par = 0
+      mskisf_par = 0._wp
       WHERE ( rhisf0_tbl_par(:,:) > 0._wp )
          mskisf_par(:,:) = 1._wp
       END WHERE
@@ -216,13 +230,14 @@ CONTAINS
          !
          ! read basin ID (2d map)
          CALL iom_open (TRIM(sn_isfpar_basin%clname), inum)
+         !
          ! get basin map
          CALL iom_get  ( inum, jpdom_global , TRIM(sn_isfpar_basin%clvar), zzid)
          id_basin_isfpar(:,:) = NINT(zzid(:,:))
+         !
          ! get basin array
          CALL iom_get  ( inum, jpdom_unknown, 'basin', rbasisf_num(1:nbasins_glo))
          CALL iom_close( inum )
-         rbasisf_num(:) = 0._wp
          !
          ! read non-resolved (i.e. parameterised) ice-shelf area [m2] per basin and per vertical level
          ALLOCATE(zisf_par_area_glo(nbasins_glo,jpk), STAT=ialloc)
@@ -250,7 +265,14 @@ CONTAINS
          !---------------------------------------------------------
          ! 3. Allocate array that have a local size
          CALL isf_alloc_par_quad('loc')
+         !
+         ALLOCATE(zarea_exchg(nbasins_loc,jpk), STAT=ialloc)
+         IF( ialloc > 0 ) THEN
+            CALL ctl_stop( 'isfpar: unable to allocate zarea_exchg' )   ;   RETURN
+         ENDIF
 
+         !---------------------------------------------------------
+         ! 4. compute flag if there is is to parametrized 
          ln_exchg(:) = .FALSE.
          DO jb_glo = 1, nbasins_glo
             jb_loc = idx_basin_glo_to_loc(jb_glo)
@@ -260,21 +282,21 @@ CONTAINS
             ENDIF
          END DO
          !
+         !---------------------------------------------------------
+         ! 5. Compute mask, area, jk [nbasin,jpk] for the param
+         !
          ! Find interfacial water columns in individual basins, save corresponding mask and area:
          !    mskisf_exchg(ji,jj,kbasin) is a horizontal 2d mask defining the exchange zone for individual basins.
-         !mskisf_exchg(:,:,:) = 0._wp
          DO jb_loc = 1, nbasins_loc
             jb_glo = idx_basin_loc_to_glo(jb_loc)
             !
             ! c=MERGE(a,b,l) is a F90 feature eq to IF ( l ) c=a ; ELSE c=b 
             DO_2D( nn_hls, nn_hls, nn_hls, nn_hls )
-               mskisf_exchg(ji,jj,jb_loc) = MERGE(1.0_wp, 0.0_wp, id_basin_isfpar(ji,jj) == jb_glo)
+               mskisf_exchg(ji,jj,jb_loc) = MERGE(REAL(mskisf_par(ji,jj),wp)*tmask_i(ji,jj), 0.0_wp, id_basin_isfpar(ji,jj) == jb_glo)
             END_2D
             !
          END DO
          !
-         ! likely not needed as all the cell filled later.
-         !jk_exchg(:,:) = 0
          DO jb_glo = 1, nbasins_glo
             !
             IF ( ln_exchg(jb_glo) ) THEN
@@ -286,15 +308,17 @@ CONTAINS
                   ctmp(jk) = local_sum( e1e2t(:,:) * tmask(:,:,jk) * mskisf_exchg(:,:,jb_loc) )
                END DO
                CALL mpp_sum( 'isf_par_init', ctmp(:) )
-               area_exchg(jb_loc,:) = REAL(ctmp(:),wp)
+               zarea_exchg(jb_loc,:) = REAL(ctmp(:),wp)
+
+               IF (SUM(zarea_exchg(jb_loc,:)) == 0._wp) THEN
+                  WRITE(cinfo, '(A,I3,A)') 'Basin ', INT(rbasisf_num(jb_glo)), ' is not represented. Check zmin wrt bathymetry'
+                  CALL ctl_stop('STOP',cinfo)
+               END IF
                !
                ! Compute all the valid wet level (jk_exchg) from area
                DO jk = 1, jpk
-                  jk_exchg(jb_loc,jk) = MERGE(jk, 0, area_exchg(jb_loc,jk) >= epsln )
+                  jk_exchg(jb_loc,jk) = MERGE(jk, 0, zarea_exchg(jb_loc,jk) >= zepsln )
                ENDDO
-               !
-               ! Extract ice shelf draft area for only the local basin
-               risf_par_area_loc(jb_loc,:) = zisf_par_area_glo(jb_glo,:)
                !
                ! Fill jk for depth below and above valid data at the front to compute melt in case draft of GL above or below the
                ! valid wet level 
@@ -322,6 +346,24 @@ CONTAINS
                DEALLOCATE(klvl)
                !
                jk_exchg(jb_loc,:) = INT(ztmp(:))
+               !
+               ! compute 1 / area_exchag as this is the what is used after:
+               r1_area_exchg(:,:) = 1.0_wp / MAX(zarea_exchg(:,:),zepsln)
+               !
+               ! compute scale factor to convert tf2s into melt
+               ! Coefficient (zcoef) for the melting parameterization:
+               !   see eq. 14 of Burgard et al. (2022)
+               !   NB: their melt is in meters of ice per second while we here use kg/m2/s
+               !   NB1: rn_isfpar_Kcoeff is defined in eq. 16 of Brugard et al. (2022)
+               !        and was calibrated at 1.16e-4 in that paper (here specified by user).
+               zcoef = rn_isfpar_Kcoeff * rho0 * ( rcp / rLfusisf )**2 * zbeta * grav * zsin_theta * 0.5_wp / zf
+               rtf2s_to_melt_loc(jb_loc,:) = zcoef * zisf_par_area_glo(jb_glo,:)
+               !
+               !IF ( jb_glo == 74 ) THEN
+               !   IF (lwp) PRINT *, 'basin : ',jb_glo
+               !   IF (lwp) PRINT *, zarea_exchg(jb_loc,:)
+               !   IF (lwp) PRINT *, jk_exchg(jb_loc,:)
+               !END IF
                !
             ELSE
                ! need to do the mpp_sum here to match the one done above by subdomain that contain the basin jb_glo
