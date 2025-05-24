@@ -255,7 +255,7 @@ CONTAINS
          idx_basin_glo_to_loc(:) = 0
          kb_used = 0
          DO jb_glo = 1, nbasins_glo
-            IF ( ANY( id_basin_isfpar(:,:) * tmask_i(:,:) == jb_glo) ) THEN
+            IF ( ANY( id_basin_isfpar(:,:) == jb_glo) ) THEN
                kb_used = kb_used + 1
                idx_basin_glo_to_loc(jb_glo) = kb_used
             ENDIF
@@ -292,7 +292,8 @@ CONTAINS
             !
             ! c=MERGE(a,b,l) is a F90 feature eq to IF ( l ) c=a ; ELSE c=b 
             DO_2D( nn_hls, nn_hls, nn_hls, nn_hls )
-               mskisf_exchg(ji,jj,jb_loc) = MERGE(REAL(mskisf_par(ji,jj),wp)*tmask_i(ji,jj), 0.0_wp, id_basin_isfpar(ji,jj) == jb_glo)
+               mskisf_exchg(ji,jj,jb_loc) = MERGE(REAL(mskisf_par(ji,jj),wp), 0.0_wp, id_basin_isfpar(ji,jj) == jb_glo)
+               !mskisf_exchg(ji,jj,jb_loc) = MERGE(1.0_wp, 0.0_wp, id_basin_isfpar(ji,jj) == jb_glo)
             END_2D
             !
          END DO
