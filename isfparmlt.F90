@@ -21,7 +21,7 @@ MODULE isfparmlt
    USE iom        , ONLY: iom_put  ! I/O library
    USE fldread    , ONLY: fld_read, FLD, FLD_N !
    USE lib_fortran, ONLY: glob_sum !
-   USE lib_mpp    , ONLY: ctl_stop !
+   USE lib_mpp    , ONLY: mpp_sum, ctl_stop !
 
    IMPLICIT NONE
 
@@ -208,6 +208,7 @@ CONTAINS
       INTEGER,  INTENT(in) :: kt
       INTEGER,  INTENT(in) :: Kmm    !  ocean time level index
       !!--------------------------------------------------------------------
+      REAL(wp) ::   zeps       = 1.e-20_wp   ! to avoid divisions by zero
       REAL(wp) ::   zfillvalue = 1.e20_wp    ! missing values in outputs
       REAL(wp) ::   zf         = 1.4e-4_wp   ! mean Coriolis parameter [s^-1]
       REAL(wp) ::   zbeta      = 7.8e-4_wp   ! salt contraction coefficient [1.e3]
@@ -245,17 +246,12 @@ CONTAINS
           ! Calculate ztftfs3d as TF*|TF|*Sloc*e1t*e2t (where TF = thermal forcing) [degC^2 1.e-3 m^2]:
           DO jk = 1,jpk
             ztftfs(jk) = SUM( ( ts(:,:,jk,jp_tem,Kmm) - ztf3d(:,:,jk) ) * abs( ts(:,:,jk,jp_tem,Kmm) - ztf3d(:,:,jk) ) &
-            &                  * ts(:,:,jk,jp_sal,Kmm) * e1e2t(:,:) * mskisf_exchg(:,:,kbasin) * tmask(:,:,jk) ) 
+            &                  * ts(:,:,jk,jp_sal,Kmm) * e1e2t(:,:) * mskisf_exchg(:,:,kbasin)                         &
+            &                  * tmask(:,:,jk) * tmask_i(:,:)  )                                                       &
+            &            / MAX( area_exchg(kbasin,jk), zeps )  
           ENDDO
           CALL mpp_sum( 'isf_par_mlt_quad_loc', ztftfs(:) )
-          zzztf2s(kbasin,:) = ztftfs(:) / area_exchg(kbasin,:)
-          !DO jk = 1,jpk
-          !  ztftfs3d(:,:,jk) = ( ts(:,:,jk,jp_tem,Kmm) - ztf3d(:,:,jk) ) * abs( ts(:,:,jk,jp_tem,Kmm) - ztf3d(:,:,jk) ) &
-          !  &                  * ts(:,:,jk,jp_sal,Kmm) * e1e2t(:,:) * mskisf_exchg(:,:,kbasin) * tmask(:,:,jk)
-          !END DO
-          !! Average profile of TF*|TF|*Sloc in the interfacial ocean grid cells [degC^2 1.e-3]
-          !! (no problem if area_exchg=0 at some levels, these values will be replaced in the next loop)
-          !zzztf2s(kbasin,:) = glob_sum( 'isfparmlt', ztftfs3d(:,:,:) ) / area_exchg(kbasin,:)
+          zzztf2s(kbasin,:) = ztftfs(:)
           !
           DO jk = 1,jpk
             !
@@ -269,7 +265,7 @@ CONTAINS
             ! (will be redistributed between zmin and zmax by subroutines isf_hdiv_mlt and tra_isf_mlt)
             ! NB: here, jk_exchg is used to put the meltwater in ocean cells of the exchange zone.
             pqfwf(:,:) = pqfwf(:,:) + zmelt(kbasin,jk) * mskisf_exchg(:,:,kbasin) &
-            &                         * tmask(:,:,jk_exchg(kbasin,jk)) / area_exchg(kbasin,jk_exchg(kbasin,jk))
+            &                         * tmask(:,:,jk_exchg(kbasin,jk)) / MAX( area_exchg(kbasin,jk_exchg(kbasin,jk)), zeps )
             !
           END DO
         ELSE

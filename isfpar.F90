@@ -202,10 +202,8 @@ CONTAINS
          ! Find interfacial water columns in individual basins, save corresponding mask and area:
          !    mskisf_exchg(ji,jj,kbasin) is a horizontal 2d mask defining the exchange zone for individual basins.
          !    area_exchg(kbasin,jk) is the total exchange area at every level in individual basins (used to calculate mean T,S profiles)
-         !    area_effec(kbasin,jk) is the effective exchange area at every level in individual basins
          ln_exchg(:) = .true.
          jk_exchg(:,:) = 0
-         area_effec(:,:) = 0.0_wp
          DO kbasin=1,nn_isfpar_basin
            !
            DO_2D( nn_hls, nn_hls, nn_hls, nn_hls ) 
@@ -218,21 +216,17 @@ CONTAINS
            !
            ! Area of the exchange zone per basin and per vertical level [m^2]
            DO jk = 1,jpk
-               ztmp(jk) = SUM( e1e2t(:,:) * tmask(:,:,jk) * mskisf_exchg(:,:,kbasin) )
+               ztmp(jk) = SUM( e1e2t(:,:) * tmask(:,:,jk) * tmask_i(:,:) * mskisf_exchg(:,:,kbasin) )
            END DO
            CALL mpp_sum( 'isf_par_init', ztmp(:) )
            area_exchg(kbasin,:) = ztmp(:)
-           !DO jk = 1,jpk
-           !  zztmp3d(:,:,jk) = e1e2t(:,:) * tmask(:,:,jk) * mskisf_exchg(:,:,kbasin)
-           !ENDDO
-           !area_exchg(kbasin,:) = glob_sum( 'isf_par_init', zztmp3d(:,:,:) )
            !
            IF ( SUM(area_exchg(kbasin,:)) .lt. epsln ) THEN
              ! identify inactive basins to skip useless calculations:
              ln_exchg(kbasin) = .false. 
            ELSE
              ! jk_exchg points to the closest level with non zero area_exchg
-             ! (used to kind of extrapolate T,S profiles to any potential ice draft depth)
+             ! (nearest-neighbour extrapolation of T,S profiles to any potential ice draft depth)
              DO jk = 1,jpk
                if ( area_exchg(kbasin,jk) .ge. epsln )  jk_exchg(kbasin,jk) = jk
              ENDDO
@@ -252,11 +246,6 @@ CONTAINS
                endif
              ENDDO
              jk_exchg(kbasin,:) = zzj_exchg(:)
-             ! Calculate area_effec(kbasin,jk) the effective exchange area at every level in individual basins
-             ! (used to re-inject freshwater accounting for the use of jk_exchg)
-             DO jk = 1,jpk
-               area_effec(kbasin,jk_exchg(kbasin,jk)) = area_effec(kbasin,jk_exchg(kbasin,jk)) + area_exchg(kbasin,jk_exchg(kbasin,jk))
-             ENDDO
            ENDIF
            !
          ENDDO ! kbasin

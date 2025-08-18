@@ -265,7 +265,7 @@ CONTAINS
 #endif
          ! iceberg classes:
          CALL iom_set_axis_attr( "icbcla", class_num )
-         ! to save date per ice-shelf basin:
+         ! to save data per ice-shelf basin:
          ALLOCATE( zbasinID(nn_isfpar_basin) )
          DO kbas=1,nn_isfpar_basin
            zbasinID(kbas) = kbas
